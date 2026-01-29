@@ -3,6 +3,7 @@ import { PreviewView, PREVIEW_VIEW_TYPE } from './previewView';
 import { PluginSettings, DEFAULT_SETTINGS, RemotionSettingTab } from './settings';
 import { extractCodeBlocks, classifyBlocks } from './extraction';
 import { synthesizeVirtualModule } from './synthesis';
+import { compileVirtualModule } from './compiler';
 
 export default class RemotionPlugin extends Plugin {
     public settings!: PluginSettings;
@@ -105,12 +106,15 @@ export default class RemotionPlugin extends Plugin {
     private updatePreview() {
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
         const previewView = this.getPreviewView();
-        if (!activeView || !previewView) return;
+        if (!activeView || !previewView || !activeView.file) return;
 
         const blocks = extractCodeBlocks(activeView.editor.getValue());
         const classified = classifyBlocks(blocks);
-        const synthesized = synthesizeVirtualModule(activeView.file?.path ?? 'Untitled.md', classified);
-        previewView.updateSynthesizedModule(synthesized.code);
+        const notePath = activeView.file.path;
+        const virtualFileName = `/virtual/${notePath}.tsx`;
+        const synthesized = synthesizeVirtualModule(notePath, classified);
+        const compiled = compileVirtualModule(virtualFileName, synthesized.code);
+        previewView.updateCompilerOutput(compiled.code || '/* no output */');
     }
 
     private getPreviewView(): PreviewView | null {

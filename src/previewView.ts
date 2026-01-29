@@ -32,7 +32,7 @@ export class PreviewView extends ItemView {
         this.iframe.style.border = 'none';
         this.iframe.style.backgroundColor = '#000';
 
-        // Initialize iframe with a simple runtime that renders synthesized module output
+        // Initialize iframe with a simple runtime that renders compiler output
         this.iframe.srcdoc = `
             <!DOCTYPE html>
             <html>
@@ -58,12 +58,12 @@ export class PreviewView extends ItemView {
             </head>
             <body>
                 <h2>Remotion Preview</h2>
-                <p>Preview panel initialized. Awaiting synthesized module...</p>
+                <p>Preview panel initialized. Awaiting compiler output...</p>
                 <pre id="extract-output">No data yet</pre>
                 <script>
                     window.addEventListener('message', (event) => {
                         const data = event.data;
-                        if (!data || data.type !== 'synthesized-module') return;
+                        if (!data || data.type !== 'compiler-output') return;
                         const pre = document.getElementById('extract-output');
                         pre.textContent = data.payload || 'No data';
                     });
@@ -77,10 +77,10 @@ export class PreviewView extends ItemView {
         this.iframe = null;
     }
 
-    public updateSynthesizedModule(code: string) {
+    public updateCompilerOutput(code: string) {
         if (!this.iframe?.contentWindow) return;
         this.iframe.contentWindow.postMessage({
-            type: 'synthesized-module',
+            type: 'compiler-output',
             payload: code,
         }, '*');
     }

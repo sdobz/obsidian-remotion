@@ -62,7 +62,7 @@ One note can define multiple scenes.
 - Use the TypeScript Compiler API with a **virtual filesystem**.
 - No real disk IO for generated files.
 - Virtual paths like:
-  - `/virtual/notes/Foo.tsx` (synthesized from Foo.md)
+  - `/virtual/folder/Foo.md.tsx` (vault-relative mapping of `folder/Foo.md`)
 - Relative imports work intuitively:
   - Importing `./Bar` resolves to `Bar.tsx` or `Bar.md` (synthesized).
 
@@ -73,7 +73,7 @@ This enables:
 
 **Implementation:**
 - Use a custom `CompilerHost` backed by `Map<string, string>`.
-- Path convention: `Foo.md` → `/virtual/notes/Foo.tsx` (not `.md.tsx`).
+- Path convention: `folder/Foo.md` → `/virtual/folder/Foo.md.tsx`.
 - Resolution order: try real `.ts`/`.tsx` files first, then synthesize from `.md`.
 - Include type definitions in virtual FS: `/react.d.ts`, `/remotion.d.ts`.
 - Use `ts.createProgram()` with incremental mode for caching.

@@ -1,6 +1,8 @@
 
 ```typescript
-import { Scene } from 'remotion'
+import { Scene } from 'remotion';
+
+const t2est: number = 5;
 ```
 
 ```tsx

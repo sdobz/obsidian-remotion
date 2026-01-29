@@ -1,5 +1,6 @@
 node_modules
 examples/.obsidian/appearance.json
 examples/.obsidian/plugins/hot-reload
+examples/.obsidian/workspace.json
 .direnv
 ChatLog.md
