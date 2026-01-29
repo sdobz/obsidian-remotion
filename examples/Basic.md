@@ -1,4 +1,8 @@
+
 ```typescript
-import {Composition} from 'remotion'
+import { Scene } from 'remotion'
 ```
 
+<Scene>
+
+</Scene>

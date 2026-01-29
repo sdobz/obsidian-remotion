@@ -6,7 +6,7 @@ import terser from '@rollup/plugin-terser';
 export default {
   input: 'src/main.ts',
   output: {
-    file: 'dist/main.js',
+    file: 'main.js',
     format: 'cjs', // Changed from 'iife'
     name: 'obsidian-remotion',
     sourcemap: true,
