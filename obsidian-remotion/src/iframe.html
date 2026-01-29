@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        html, body { 
+            margin: 0; 
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: system-ui;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        #players {
+            position: relative;
+            width: 100%;
+            min-height: 100vh;
+        }
+        #players > div {
+            position: absolute;
+            left: 0;
+            right: 0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        #players > div.focused {
+            background-color: rgba(100, 150, 255, 0.1);
+            border: 1px solid rgba(100, 150, 255, 0.3);
+        }
+        #players > div > .player-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1280 / 720;
+        }
+        #players > div > .player-wrapper > * {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="players"></div>
+    <script>
+        // Module registry for require polyfill
+        const __modules__ = {};
+        
+        // Minimal require polyfill - checks __modules__ and window globals
+        function require(id) {
+            if (__modules__[id]) return __modules__[id];
+            if (window[id]) return window[id];
+            if (window.__REMOTION_DEPS__ && window.__REMOTION_DEPS__[id]) return window.__REMOTION_DEPS__[id];
+            throw new Error('Module not found: ' + id);
+        }
+        
+        window.__REMOTION_DEPS__ = window.__REMOTION_DEPS__ || {};
+        let __root = null;
+
+        function renderPlayers(sequence, blockPositions) {
+            const deps = window.__REMOTION_DEPS__ || {};
+            const React = deps.react;
+            const PlayerModule = deps['@remotion/player'];
+            const Player = (PlayerModule && PlayerModule.Player) || (PlayerModule && PlayerModule.default) || PlayerModule;
+            const ReactDomClient = deps['react-dom/client'] || deps['react-dom'];
+            const playersEl = document.getElementById('players');
+
+            if (!React || !ReactDomClient || !Player || !playersEl) {
+                console.error('[renderPlayers] Missing dependencies:', {
+                    react: !!React,
+                    player: !!Player,
+                    reactDom: !!ReactDomClient,
+                    playersEl: !!playersEl,
+                    playerModule: PlayerModule ? Object.keys(PlayerModule) : 'undefined'
+                });
+                throw new Error('Missing React, ReactDOM, or @remotion/player');
+            }
+
+            const createRoot = ReactDomClient.createRoot || ReactDomClient.unstable_createRoot;
+            if (createRoot && !__root) {
+                __root = createRoot(playersEl);
+            }
+
+            const scenes = (sequence && sequence.scenes) || [];
+            
+            // Initial positions from editor
+            const initialPositions = [];
+            
+            scenes.forEach((scene, idx) => {
+                const blockPos = blockPositions && blockPositions[idx];
+                const top = blockPos ? blockPos.topOffset : (idx * 500);
+                initialPositions.push(top);
+            });
+
+            const nodes = scenes.map((scene, idx) => {
+                return React.createElement(
+                    'div',
+                    { 
+                        key: scene.id, 
+                        'data-scene-id': scene.id,
+                        style: { 
+                            top: initialPositions[idx] + 'px',
+                        }
+                    },
+                    React.createElement(
+                        'div',
+                        { className: 'player-wrapper' },
+                        React.createElement(Player, {
+                            component: scene.component,
+                            durationInFrames: 150,
+                            fps: 30,
+                            compositionWidth: 1280,
+                            compositionHeight: 720,
+                            controls: true,
+                            acknowledgeRemotionLicense: true,
+                            style: { width: '100%' },
+                        })
+                    )
+                );
+            });
+
+            if (__root) {
+                __root.render(React.createElement(React.Fragment, null, ...nodes));
+            } else if (ReactDomClient.render) {
+                ReactDomClient.render(React.createElement(React.Fragment, null, ...nodes), playersEl);
+            }
+
+            // After rendering, adjust positions based on actual heights to prevent overlap
+            requestAnimationFrame(() => {
+                const MIN_SPACING = 16;
+                const playerElements = Array.from(playersEl.querySelectorAll('[data-scene-id]'));
+                const adjustedPositions = [];
+                let lastBottom = 0;
+
+                playerElements.forEach((el, idx) => {
+                    const desiredTop = initialPositions[idx];
+                    const actualHeight = el.getBoundingClientRect().height;
+                    
+                    // If desired position would cause overlap, push it down
+                    const actualTop = Math.max(desiredTop, lastBottom + MIN_SPACING);
+                    adjustedPositions.push(actualTop);
+                    lastBottom = actualTop + actualHeight;
+                    
+                    // Apply adjusted position
+                    el.style.top = actualTop + 'px';
+                });
+
+                // Update container height
+                playersEl.style.minHeight = (lastBottom + 100) + 'px';
+            });
+        }
+
+        function loadBundle(code, blockPositions) {
+            try {
+                window.RemotionBundle = undefined;
+                // eslint-disable-next-line no-eval
+                eval(code);
+                const mod = window.RemotionBundle;
+                const sequence = (mod && mod.default) || mod;
+                if (!sequence || !sequence.scenes) {
+                    throw new Error('Bundle did not export a default Sequence');
+                }
+                renderPlayers(sequence, blockPositions);
+            } catch (err) {
+                const message = err && err.message ? err.message : String(err);
+                window.parent.postMessage({
+                    type: 'runtime-error',
+                    error: { message, stack: err && err.stack ? err.stack : '' }
+                }, '*');
+            }
+        }
+
+        let __currentFocusedScene = null;
+
+        window.addEventListener('message', (event) => {
+            const data = event.data;
+            if (!data) return;
+            
+            if (data.type === 'bundle-output') {
+                if (data.payload) {
+                    loadBundle(data.payload, data.blockPositions || []);
+                }
+            } else if (data.type === 'focus-scene') {
+                __currentFocusedScene = data.sceneId;
+                const sceneEl = document.querySelector('[data-scene-id="' + data.sceneId + '"]');
+                if (sceneEl) {
+                    document.querySelectorAll('[data-scene-id]').forEach(el => {
+                        el.classList.remove('focused');
+                    });
+                    sceneEl.classList.add('focused');
+                }
+            } else if (data.type === 'sync-scroll') {
+                window.scrollTo({ top: data.scrollTop, behavior: 'auto' });
+            }
+        });
+
+        // Send scroll events from iframe to parent
+        let scrollTimeout = null;
+        window.addEventListener('scroll', () => {
+            if (scrollTimeout) clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                window.parent.postMessage({
+                    type: 'iframe-scroll',
+                    scrollTop: window.scrollY
+                }, '*');
+            }, 10);
+        });
+
+        window.parent.postMessage({ type: 'iframe-ready' }, '*');
+    </script>
+</body>
+</html>

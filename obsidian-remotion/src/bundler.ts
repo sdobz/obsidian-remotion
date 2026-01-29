@@ -30,8 +30,6 @@ export async function bundleVirtualModule(
     entryName: string,
     nodeModulesPaths: string[]
 ): Promise<BundleResult> {
-    console.log('[bundler] Starting bundleVirtualModule', { entryName, nodeModulesPaths });
-
     const esbuild = loadEsbuild(nodeModulesPaths);
 
     // Create a virtual module resolver for esbuild
@@ -39,13 +37,11 @@ export async function bundleVirtualModule(
         name: 'virtual-entry',
         setup(build) {
             build.onResolve({ filter: /^virtual-entry$/ }, () => {
-                console.log('[bundler] Resolved virtual-entry');
                 return { path: entryName, namespace: 'virtual' };
             });
 
             build.onResolve({ filter: /.*/ }, (args) => {
                 if (args.path === entryName || args.path.startsWith('/virtual/')) {
-                    console.log('[bundler] Resolved virtual path:', args.path);
                     return { path: args.path, namespace: 'virtual' };
                 }
                 return null;
@@ -53,7 +49,6 @@ export async function bundleVirtualModule(
 
             build.onLoad({ filter: /.*/, namespace: 'virtual' }, (args) => {
                 if (args.path === entryName || args.path.startsWith('/virtual/')) {
-                    console.log('[bundler] Loading virtual entry, code length:', entryCode.length);
                     return {
                         contents: entryCode,
                         loader: 'ts',
@@ -92,11 +87,8 @@ module.exports = sequence;
             nodePaths: nodeModulesPaths.length > 0 ? nodeModulesPaths : undefined,
         });
 
-        console.log('[bundler] esbuild completed, outputs:', result.outputFiles.length);
-
         if (result.outputFiles.length > 0) {
             let rawCode = new TextDecoder().decode(result.outputFiles[0].contents);
-            console.log('[bundler] Final code length:', rawCode.length);
             
             // Fix: esbuild IIFE doesn't return the module result, add return statement
             // Replace the last require_stdin() call with return require_stdin()
@@ -107,7 +99,6 @@ module.exports = sequence;
             return { code };
         }
 
-        console.log('[bundler] No output from esbuild');
         return { code: '' };
     } catch (err) {
         console.error('[bundler] esbuild error:', err);
