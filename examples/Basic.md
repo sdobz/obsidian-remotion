@@ -1,8 +1,7 @@
 
 ```tsx
 import React from 'react';
-import { 
-useCurrentFrame, interpolate } from 'remotion';
+import { useCurrentFrame, interpolate } from 'remotion';
 
 
 const Title: React.FC = () => {

@@ -107,7 +107,7 @@
 ## Editor Sync & Diagnostics
 
 ### Cursor-to-Block Mapping
-13. [ ] **Map editor cursor position to corresponding JSX entry block**
+13. [x] **Map editor cursor position to corresponding JSX entry block**
   - Semantics: Given cursor position, find which block the cursor is in; if not JSX entry, find nearest one
   - Implementation: Binary search through extracted block offset ranges
   - Output: `blockIndex` or `null` if no relevant block
@@ -115,7 +115,7 @@
   - Test case: Cursor movement fires correct `focus-scene` messages
 
 ### Focus Sync: Editor → Preview
-14. [ ] **Scroll preview to show the scene under the cursor**
+14. [x] **Scroll preview to show the scene under the cursor**
   - Semantics: When cursor moves in editor, highlight or scroll corresponding player in iframe
   - Message: `{ type: 'focus-scene', sceneId: '__scene_N' }`
   - UI: Player header is highlighted or scrolled into view
@@ -123,7 +123,7 @@
   - Test case: Moving cursor between blocks visibly changes highlighted player
 
 ### Focus Sync: Preview → Editor
-15. [ ] **Scroll editor to show the block when player is clicked**
+15. [x] **Scroll editor to show the block when player is clicked**
   - Semantics: When player is activated (click, play, etc.), scroll editor to originating block
   - Message: `{ type: 'scene-activated', sceneId: '__scene_N' }` (from iframe to plugin)
   - Editor action: `editor.setCursor()` + `scrollIntoView()` to block range

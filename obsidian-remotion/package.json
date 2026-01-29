@@ -8,7 +8,8 @@
     "build": "NODE_ENV=production node esbuild.config.js",
     "clean": "rm -rf main.js esbuild.wasm",
     "watch": "node esbuild.config.js --watch",
-    "test": "jest"
+    "test": "jest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "keywords": [
     "obsidian",
@@ -22,7 +23,15 @@
   "dependencies": {
     "remotion-md": "*"
   },
+  "peerDependencies": {
+    "@codemirror/lint": "*",
+    "@codemirror/state": "*",
+    "@codemirror/view": "*"
+  },
   "devDependencies": {
+    "@codemirror/lint": "^6.9.3",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.28.2",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.0.0",
     "esbuild": "^0.20.0",

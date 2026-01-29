@@ -1,9 +1,10 @@
 import { Plugin, WorkspaceLeaf, MarkdownView, FileSystemAdapter } from 'obsidian';
 import { PreviewView, PREVIEW_VIEW_TYPE } from './previewView';
 import { PluginSettings, DEFAULT_SETTINGS, RemotionSettingTab } from './settings';
-import { extractCodeBlocks, classifyBlocks, synthesizeVirtualModule, compileVirtualModule } from 'remotion-md';
+import { extractCodeBlocks, classifyBlocks, synthesizeVirtualModule, compileVirtualModule, mapDiagnosticsToMarkdown } from 'remotion-md';
 import { bundleVirtualModule } from './bundler';
 import { cursorToBlockIndex, blockIndexToSceneId } from './focusSync';
+import { editorDiagnosticsExtension, applyEditorDiagnostics, clearEditorDiagnostics } from './editorDiagnostics';
 import path from 'path';
 import fs from 'fs';
 
@@ -17,6 +18,7 @@ export default class RemotionPlugin extends Plugin {
     private currentScrollDOM: HTMLElement | null = null;
     private scrollListener: (() => void) | null = null;
     private isSyncingScroll = false;
+    private updateVersion = 0;
     private handleIframeMessage = (event: MessageEvent) => {
         const data = event.data as { type?: string; sceneId?: string; scrollTop?: number };
         if (!data) return;
@@ -46,6 +48,8 @@ export default class RemotionPlugin extends Plugin {
 
     async onload() {
         await this.loadSettings();
+
+        this.registerEditorExtension(editorDiagnosticsExtension);
 
         try {
             const vaultRoot = this.getVaultRootPath();
@@ -116,6 +120,7 @@ export default class RemotionPlugin extends Plugin {
             // No markdown file active, but keep preview open if user wants it
             // (They can close it manually or toggle with ribbon icon)
             this.detachScrollListener();
+            this.clearActiveEditorDiagnostics();
         }
     }
 
@@ -179,7 +184,9 @@ export default class RemotionPlugin extends Plugin {
 
         this.updateTimeoutId = window.setTimeout(() => {
             this.updateTimeoutId = null;
-            void this.updatePreview();
+            this.updateVersion += 1;
+            const version = this.updateVersion;
+            void this.updatePreview(version);
         }, 300);
     }
 
@@ -262,7 +269,7 @@ export default class RemotionPlugin extends Plugin {
         }
     }
 
-    private async updatePreview() {
+    private async updatePreview(version: number) {
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
         const previewView = this.getPreviewView();
         if (!activeView || !previewView || !activeView.file) return;
@@ -275,6 +282,9 @@ export default class RemotionPlugin extends Plugin {
         const virtualFileName = `/virtual/${notePath}.tsx`;
         const synthesized = synthesizeVirtualModule(notePath, classified);
         const compiled = compileVirtualModule(virtualFileName, synthesized.code);
+        const markdownDiagnostics = mapDiagnosticsToMarkdown(compiled.diagnostics, synthesized.code, classified);
+        if (version !== this.updateVersion) return;
+        this.updateEditorDiagnostics(activeView, markdownDiagnostics);
 
         const vaultRoot = this.getVaultRootPath();
         if (!vaultRoot) {
@@ -285,6 +295,7 @@ export default class RemotionPlugin extends Plugin {
         const absoluteNotePath = path.join(vaultRoot, notePath);
         const nodeModulesPaths = this.findNodeModulesPaths(path.dirname(absoluteNotePath), vaultRoot);
         const bundled = await bundleVirtualModule(compiled.code, virtualFileName, nodeModulesPaths);
+        if (version !== this.updateVersion) return;
 
         // Get editor metrics for spatial alignment
         const editorEl = (activeView.editor as any).cm;
@@ -302,6 +313,26 @@ export default class RemotionPlugin extends Plugin {
             }));
 
         previewView.updateBundleOutput(bundled.code || '/* no output */', blockPositions);
+    }
+
+    private updateEditorDiagnostics(activeView: MarkdownView, diagnostics: ReturnType<typeof mapDiagnosticsToMarkdown>) {
+        const cm = (activeView.editor as any).cm;
+        if (!cm || typeof cm.dispatch !== 'function') return;
+
+        if (diagnostics.length === 0) {
+            clearEditorDiagnostics(cm);
+            return;
+        }
+
+        applyEditorDiagnostics(cm, diagnostics);
+    }
+
+    private clearActiveEditorDiagnostics() {
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!activeView) return;
+        const cm = (activeView.editor as any).cm;
+        if (!cm || typeof cm.dispatch !== 'function') return;
+        clearEditorDiagnostics(cm);
     }
 
     private getPreviewView(): PreviewView | null {

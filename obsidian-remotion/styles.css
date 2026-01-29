@@ -1,0 +1,17 @@
+.remotion-diagnostic {
+  text-decoration: underline wavy var(--text-error);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.remotion-diagnostic--warning {
+  text-decoration-color: var(--text-warning);
+}
+
+.remotion-diagnostic--info {
+  text-decoration-color: var(--text-accent);
+}
+
+.remotion-diagnostic--error {
+  text-decoration-color: var(--text-error);
+}
