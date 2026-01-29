@@ -46,28 +46,42 @@ export class PreviewView extends ItemView {
             <head>
                 <meta charset="utf-8">
                 <style>
-                    body { 
+                    * {
+                        box-sizing: border-box;
+                    }
+                    html, body { 
                         margin: 0; 
-                        padding: 20px;
+                        padding: 0;
+                        width: 100%;
+                        height: 100%;
                         font-family: system-ui;
                         background: #1a1a1a;
                         color: #fff;
                     }
-                    pre {
-                        white-space: pre-wrap;
-                        word-break: break-word;
-                        background: #111;
+                    #players {
+                        width: 100%;
                         padding: 12px;
-                        border-radius: 6px;
-                        border: 1px solid #333;
+                    }
+                    #players > div {
+                        position: relative;
+                        width: 100%;
+                        height: auto;
+                    }
+                    #players > div > * {
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        margin: auto;
+                        aspectRatio: 1280 / 720;
+                        maxHeight: 100%;
+                        maxWidth: 100%;
                     }
                 </style>
             </head>
             <body>
-                <h2>Remotion Preview</h2>
-                <p>Preview panel initialized. Awaiting bundle output...</p>
                 <div id="players"></div>
-                <pre id="extract-output">No data yet</pre>
                 <script>
                     // Module registry for require polyfill
                     const __modules__ = {};
@@ -121,6 +135,7 @@ export class PreviewView extends ItemView {
                                     compositionHeight: 720,
                                     controls: true,
                                     acknowledgeRemotionLicense: true,
+                                    style: { width: '100%' },
                                 })
                             );
                         });
@@ -156,8 +171,6 @@ export class PreviewView extends ItemView {
                     window.addEventListener('message', (event) => {
                         const data = event.data;
                         if (!data || data.type !== 'bundle-output') return;
-                        const pre = document.getElementById('extract-output');
-                        pre.textContent = data.payload || 'No data';
                         if (data.payload) {
                             loadBundle(data.payload);
                         }
