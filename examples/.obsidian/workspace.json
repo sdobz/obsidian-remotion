@@ -22,22 +22,6 @@
             }
           }
         ]
-      },
-      {
-        "id": "fc6b93fb99ddba31",
-        "type": "tabs",
-        "children": [
-          {
-            "id": "79bc682fc333dcc5",
-            "type": "leaf",
-            "state": {
-              "type": "remotion-preview-view",
-              "state": {},
-              "icon": "video",
-              "title": "Remotion Preview"
-            }
-          }
-        ]
       }
     ],
     "direction": "vertical"
@@ -94,7 +78,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 247.5
+    "width": 200
   },
   "right": {
     "id": "7beca67ba9e21b95",
@@ -110,6 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
+                "file": "Basic.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -119,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks"
+              "title": "Backlinks for Basic"
             }
           },
           {
@@ -170,20 +155,31 @@
             "state": {
               "type": "outline",
               "state": {
+                "file": "Basic.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline"
+              "title": "Outline of Basic"
+            }
+          },
+          {
+            "id": "676e0ce2ec05240d",
+            "type": "leaf",
+            "state": {
+              "type": "remotion-preview-view",
+              "state": {},
+              "icon": "video",
+              "title": "Remotion Preview"
             }
           }
-        ]
+        ],
+        "currentTab": 5
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 348.5
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -194,12 +190,13 @@
       "templates:Insert template": false,
       "command-palette:Open command palette": false,
       "bases:Create new base": false,
-      "obsidian-remotion:Open Remotion Preview": false
+      "obsidian-remotion:Open Remotion Preview": false,
+      "obsidian-remotion:Toggle Remotion Preview": false
     }
   },
   "active": "a2cc4d0b661224a5",
   "lastOpenFiles": [
-    "Basic.md",
+    "Empty.md",
     "Basic.md",
     "Welcome.md"
   ]

@@ -32,7 +32,7 @@ export class PreviewView extends ItemView {
         this.iframe.style.border = 'none';
         this.iframe.style.backgroundColor = '#000';
 
-        // TODO: Initialize iframe with Remotion runtime
+        // Initialize iframe with a simple runtime that renders extractCodeBlocks output
         this.iframe.srcdoc = `
             <!DOCTYPE html>
             <html>
@@ -46,11 +46,28 @@ export class PreviewView extends ItemView {
                         background: #1a1a1a;
                         color: #fff;
                     }
+                    pre {
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        background: #111;
+                        padding: 12px;
+                        border-radius: 6px;
+                        border: 1px solid #333;
+                    }
                 </style>
             </head>
             <body>
                 <h2>Remotion Preview</h2>
-                <p>Preview panel initialized. Awaiting scene compilation...</p>
+                <p>Preview panel initialized. Awaiting extraction output...</p>
+                <pre id="extract-output">No data yet</pre>
+                <script>
+                    window.addEventListener('message', (event) => {
+                        const data = event.data;
+                        if (!data || data.type !== 'extract-code-blocks') return;
+                        const pre = document.getElementById('extract-output');
+                        pre.textContent = JSON.stringify(data.payload, null, 2);
+                    });
+                </script>
             </body>
             </html>
         `;
@@ -58,5 +75,13 @@ export class PreviewView extends ItemView {
 
     async onClose() {
         this.iframe = null;
+    }
+
+    public updateExtractedBlocks(blocks: unknown) {
+        if (!this.iframe?.contentWindow) return;
+        this.iframe.contentWindow.postMessage({
+            type: 'extract-code-blocks',
+            payload: blocks,
+        }, '*');
     }
 }

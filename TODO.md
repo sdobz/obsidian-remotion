@@ -3,7 +3,7 @@
 ## Core Semantic Layer: Extraction & Synthesis
 
 ### Block Extraction
-- [ ] **Extract TSX blocks from markdown**
+- [x] **Extract TSX blocks from markdown**
   - Semantics: Parse a `.md` file and extract all fenced code blocks with language `ts`, `tsx`, `typescript`
   - Output: List of blocks with `{ content, language, startLine, endLine, startOffset, endOffset }`
   - Architecture checkpoint: Should work with Obsidian's built-in parser; no regex
