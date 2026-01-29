@@ -1,9 +1,12 @@
-import { Plugin, WorkspaceLeaf, MarkdownView } from 'obsidian';
+import { Plugin, WorkspaceLeaf, MarkdownView, FileSystemAdapter } from 'obsidian';
 import { PreviewView, PREVIEW_VIEW_TYPE } from './previewView';
 import { PluginSettings, DEFAULT_SETTINGS, RemotionSettingTab } from './settings';
 import { extractCodeBlocks, classifyBlocks } from './extraction';
 import { synthesizeVirtualModule } from './synthesis';
 import { compileVirtualModule } from './compiler';
+import { bundleVirtualModule } from './bundler';
+import path from 'path';
+import fs from 'fs';
 
 export default class RemotionPlugin extends Plugin {
     public settings!: PluginSettings;
@@ -99,11 +102,11 @@ export default class RemotionPlugin extends Plugin {
 
         this.updateTimeoutId = window.setTimeout(() => {
             this.updateTimeoutId = null;
-            this.updatePreview();
+            void this.updatePreview();
         }, 300);
     }
 
-    private updatePreview() {
+    private async updatePreview() {
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
         const previewView = this.getPreviewView();
         if (!activeView || !previewView || !activeView.file) return;
@@ -114,12 +117,57 @@ export default class RemotionPlugin extends Plugin {
         const virtualFileName = `/virtual/${notePath}.tsx`;
         const synthesized = synthesizeVirtualModule(notePath, classified);
         const compiled = compileVirtualModule(virtualFileName, synthesized.code);
-        previewView.updateCompilerOutput(compiled.code || '/* no output */');
+
+        const vaultRoot = this.getVaultRootPath();
+        if (!vaultRoot) {
+            previewView.updateBundleOutput('/* vault root unavailable */');
+            return;
+        }
+
+        const absoluteNotePath = path.join(vaultRoot, notePath);
+        const nodeModulesPaths = this.findNodeModulesPaths(path.dirname(absoluteNotePath), vaultRoot);
+        const bundled = await bundleVirtualModule(compiled.code, virtualFileName, nodeModulesPaths);
+
+        previewView.updateBundleOutput(bundled.code || '/* no output */');
     }
 
     private getPreviewView(): PreviewView | null {
         const leaf = this.app.workspace.getLeavesOfType(PREVIEW_VIEW_TYPE)[0];
         return leaf?.view instanceof PreviewView ? (leaf.view as PreviewView) : null;
+    }
+
+    private getVaultRootPath(): string | null {
+        const adapter = this.app.vault.adapter;
+        if (adapter instanceof FileSystemAdapter) {
+            return adapter.getBasePath();
+        }
+        return null;
+    }
+
+    private findNodeModulesPaths(startDir: string, rootDir: string): string[] {
+        const paths: string[] = [];
+        let current = startDir;
+
+        while (current.startsWith(rootDir)) {
+            const candidate = path.join(current, 'node_modules');
+            if (fs.existsSync(candidate)) {
+                paths.push(candidate);
+                break;
+            }
+
+            const parent = path.dirname(current);
+            if (parent === current) break;
+            current = parent;
+        }
+
+        if (paths.length === 0) {
+            const fallback = path.join(rootDir, 'node_modules');
+            if (fs.existsSync(fallback)) {
+                paths.push(fallback);
+            }
+        }
+
+        return paths;
     }
 
     async onunload() {

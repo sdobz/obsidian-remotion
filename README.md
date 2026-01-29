@@ -133,10 +133,10 @@ Iframe → Parent:
 { type: "scene-activated", sceneId: string }
 ```
 
-**Import Rewriting:**
-- Imports are rewritten to globals: `import { X } from 'remotion'` → `const { X } = window.__REMOTION_DEPS__.remotion;`
-- Allowed modules are injected: `window.__REMOTION_DEPS__ = { react: React, remotion: Remotion };`
-- Imports outside the allowlist cause compile errors.
+**Node Module Usage (no allowlist):**
+- Imports should resolve via standard Node resolution using `node_modules` located in the ancestor tree of the active note.
+- Avoid custom import rewriting or bundling at this stage; rely on existing tooling/runtime for resolution.
+- Use package installs (e.g. `npm install <pkg>`) and keep packages browser-compatible (avoid native/binary addons).
 
 ---
 

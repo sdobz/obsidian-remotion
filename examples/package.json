@@ -1,0 +1,13 @@
+{
+  "name": "obsidian-remotion-examples",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Example package for Obsidian Remotion preview",
+  "dependencies": {
+    "@remotion/player": "^4.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "remotion": "^4.0.0"
+  }
+}

@@ -45,7 +45,7 @@
   - Test case: Importing a `.md` file should type-check without errors
 
 ### Compile to JavaScript
-6. [ ] **Use TypeScript Compiler API to emit JSX entry code as JavaScript**
+6. [x] **Use TypeScript Compiler API to emit JSX entry code as JavaScript**
   - Semantics: Transform synthesized TSX → valid JS, collect type errors
   - Implementation: `ts.createProgram()` + `program.emit()` with options `jsx: React, target: ES2020`
   - Output: `{ code: string, diagnostics: ts.Diagnostic[] }`
@@ -53,15 +53,14 @@
   - Test case: No type errors in valid TSX; clear errors in invalid code
 
 ### Import Rewriting to Globals
-7. [ ] **Rewrite module imports to reference injected globals**
-  - Semantics: Transform `import { X } from 'module'` → `const { X } = window.__REMOTION_DEPS__.module`
-  - Allowed modules: `react`, `remotion`, and any explicitly whitelisted
-  - Implementation: AST transform or careful string rewriting
-  - Architecture checkpoint: Imports outside allowlist cause compile-time errors
-  - Test case: `import { spring } from 'remotion'` becomes global reference; unknown imports fail
+7. [x] **Bundle dependencies from nearest node_modules**
+  - Semantics: Use Rollup + node-resolve + commonjs to bundle compiled JS, so imports resolve via the nearest `node_modules` ancestor of the active note.
+  - Implementation: Find the closest `node_modules` directory walking up from the note path, then pass it to Rollup's `modulePaths`.
+  - Architecture checkpoint: No custom module resolution logic or allowlists; delegate to Rollup + node-resolve.
+  - Test case: `import { spring } from 'remotion'` resolves after `npm install remotion` in a parent folder.
 
 ### Wrap JSX Entries into Exports
-8. [ ] **Transform bare JSX blocks into valid exported functions**
+8. [x] **Transform bare JSX blocks into valid exported functions**
   - Semantics: Convert `<Scene />` (illegal at top level) → `export const __scene_N = () => ( <Scene /> );`
   - Triggering condition: Block is classified as `jsx-entry`
   - Output: Valid TS that can be type-checked and emitted
@@ -73,7 +72,7 @@
 ## Iframe Runtime & Registration
 
 ### Iframe Initialization
-9. [ ] **Set up sandboxed iframe with injected dependencies**
+9. [x] **Set up sandboxed iframe with injected dependencies**
   - Semantics: Create an HTML iframe that has no filesystem, only explicit globals
   - Content: Inject React, Remotion, and a runtime message listener
   - Output: `iframe.srcdoc` with `window.__REMOTION_DEPS__ = { react, remotion, ... }`
@@ -81,7 +80,7 @@
   - Test case: Iframe loads and posts `ready` message back to parent
 
 ### Scene Registration
-10. [ ] **Dynamically register Remotion compositions from emitted code**
+10. [x] **Dynamically register Remotion compositions from emitted code**
   - Semantics: Execute the emitted JS in the iframe; extract `__scene_N` exports and register as Remotion compositions
   - Implementation: `eval()` the bundled code, then call `Remotion.registerComposition()` for each scene
   - Metadata: Scene ID, display name (from block index or nearby heading), duration, config
@@ -89,14 +88,14 @@
   - Test case: A `.md` with two JSX blocks results in two registered compositions
 
 ### Error Boundary in Iframe
-11. [ ] **Catch runtime errors in the iframe and report back to plugin**
+11. [x] **Catch runtime errors in the iframe and report back to plugin**
   - Semantics: Wrap scene execution in try/catch; on error, post message with details
   - Output: `{ type: 'runtime-error', sceneId, message, stack }` posted to parent
   - Architecture checkpoint: Errors don't crash the iframe; it remains usable for hot reload
   - Test case: Invalid JSX or missing imports produce reportable errors
 
 ### Hot Reload Protocol
-12. [ ] **Update compositions without reloading the iframe**
+12. [x] **Update compositions without reloading the iframe**
   - Semantics: Parent sends new JS via postMessage; iframe clears old scenes and registers new ones
   - Message format: `{ type: 'load-scene', code: string, metadata: SceneMetadata[] }`
   - Preservation: Playback state, timeline position, zoom level should survive reload

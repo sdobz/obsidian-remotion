@@ -19,6 +19,7 @@ import { Composition } from 'remotion';
         expect(result.code).toContain('import { Composition }');
         expect(result.code).toContain('export const __scene_1');
         expect(result.sceneExports[0].exportName).toBe('__scene_1');
+        expect(result.code).toContain('export default __sequence;');
     });
 
     test('includes sentinels for module and scene blocks', () => {
@@ -37,5 +38,25 @@ const A = 1;
 
         expect(result.code).toContain('// --- block 0 @ MyNote.md:2 ---');
         expect(result.code).toContain('// --- block 1 @ MyNote.md:6 ---');
+    });
+
+    test('exports a sequence containing all scenes', () => {
+        const markdown = `
+\`\`\`tsx
+<SceneA />
+\`\`\`
+
+\`\`\`tsx
+<SceneB />
+\`\`\`
+`;
+
+        const blocks = classifyBlocks(extractCodeBlocks(markdown));
+        const result = synthesizeVirtualModule('Seq.md', blocks);
+
+        expect(result.code).toContain('type Sequence');
+        expect(result.code).toContain('const __sequence');
+        expect(result.code).toContain('export default __sequence;');
+        expect(result.sceneExports).toHaveLength(2);
     });
 });
