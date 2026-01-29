@@ -193,3 +193,14 @@
   - UI: Preview opens to the right side, doesn't steal focus
   - Architecture checkpoint: Can be opened/closed multiple times without errors
   - Test case: Clicking icon opens preview; clicking again reveals if hidden
+---
+
+## Vault Setup & Dependencies
+
+### Vault Environment Configuration
+23. [ ] **Set up vault with Node.js environment for runtime dependencies**
+  - Semantics: User creates or configures a `package.json` in the vault root (or parent directory) with Remotion, React, and related dependencies
+  - Purpose: Plugin resolves these at runtime from the vault's `node_modules`, not bundled into the plugin itself
+  - Benefits: User controls Remotion version; smaller plugin size; clearer separation of concerns; faster plugin updates
+  - Architecture checkpoint: Plugin assumes vault environment exists; fails gracefully if missing
+  - Test case: Installing dependencies in vault enables preview; removing them disables gracefully

@@ -1,0 +1,36 @@
+{
+  "name": "remotion-md",
+  "version": "0.1.0",
+  "description": "Extract, synthesize, and compile Markdown files into Remotion sequences",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "test": "jest"
+  },
+  "license": "MIT",
+  "keywords": [
+    "remotion",
+    "markdown",
+    "compiler",
+    "video",
+    "typescript"
+  ],
+  "dependencies": {
+    "typescript": "^4.0.0"
+  },
+  "peerDependencies": {
+    "remotion": "^4.0.0",
+    "react": "^18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "remotion": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  }
+}

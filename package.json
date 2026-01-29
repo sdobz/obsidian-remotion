@@ -1,40 +1,22 @@
 {
-  "name": "obsidian-remotion",
-  "version": "1.0.0",
-  "description": "An Obsidian plugin that turns Markdown notes into live, type-checked Remotion previews.",
-  "main": "dist/main.js",
-  "scripts": {
-    "build": "rollup -c",
-    "watch": "rollup -c -w",
-    "test": "jest"
-  },
-  "keywords": [
-    "obsidian",
-    "plugin",
-    "remotion",
-    "video",
-    "typescript"
+  "name": "obsidian-remotion-workspace",
+  "private": true,
+  "workspaces": [
+    "remotion-md",
+    "obsidian-remotion",
+    "examples"
   ],
-  "author": "Your Name",
-  "license": "MIT",
-  "dependencies": {
-    "@remotion/player": "^4.0.0",
-    "@rollup/plugin-commonjs": "^29.0.0",
-    "@rollup/plugin-node-resolve": "^16.0.3",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "remotion": "^4.0.0",
-    "rollup": "^2.0.0"
+  "scripts": {
+    "build": "npm run build -w remotion-md && npm run build -w obsidian-remotion",
+    "test": "npm test -w remotion-md",
+    "clean": "npm run clean -w remotion-md && rm -rf obsidian-remotion/main.js obsidian-remotion/main.js.map",
+    "watch": "npm run watch -w obsidian-remotion"
   },
   "devDependencies": {
-    "@rollup/plugin-terser": "^0.4.4",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.0.0",
     "jest": "^30.2.0",
-    "obsidian": "^1.11.0",
-    "rollup-plugin-typescript2": "^0.36.0",
     "ts-jest": "^29.2.5",
-    "tslib": "^2.8.1",
     "typescript": "^4.0.0"
   }
 }

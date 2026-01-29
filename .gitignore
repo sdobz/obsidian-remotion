@@ -1,6 +1,9 @@
 node_modules
-examples/.obsidian/appearance.json
 examples/.obsidian/plugins/hot-reload
 examples/.obsidian/workspace.json
+examples/.obsidian/appearance.json
 .direnv
 ChatLog.md
+
+remotion-md/dist
+obsidian-remotion/main.js*
