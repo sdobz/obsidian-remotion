@@ -88,7 +88,7 @@
   - Test case: A `.md` with two JSX blocks results in two registered compositions
 
 ### Error Boundary in Iframe
-11. [x] **Catch runtime errors in the iframe and report back to plugin**
+11. [ ] **Catch runtime errors in the iframe and report back to plugin**
   - Semantics: Wrap scene execution in try/catch; on error, post message with details
   - Output: `{ type: 'runtime-error', sceneId, message, stack }` posted to parent
   - Architecture checkpoint: Errors don't crash the iframe; it remains usable for hot reload

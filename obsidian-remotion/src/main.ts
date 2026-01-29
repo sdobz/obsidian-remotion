@@ -11,7 +11,19 @@ export default class RemotionPlugin extends Plugin {
     private updateTimeoutId: number | null = null;
 
     async onload() {
+        console.log('RemotionPlugin.onload() called');
         await this.loadSettings();
+
+        try {
+            const vaultRoot = this.getVaultRootPath();
+            const configDir = (this.app.vault as any).configDir || '.obsidian';
+            if (vaultRoot && this.manifest?.id) {
+                const pluginDir = path.join(vaultRoot, configDir, 'plugins', this.manifest.id);
+                (globalThis as any).__REMOTION_PLUGIN_DIR = pluginDir;
+            }
+        } catch (err) {
+            console.log('[RemotionPlugin] Failed to set plugin dir:', err);
+        }
 
         // Register the Remotion preview view
         this.registerView(PREVIEW_VIEW_TYPE, (leaf: WorkspaceLeaf) => new PreviewView(leaf));
@@ -137,7 +149,13 @@ export default class RemotionPlugin extends Plugin {
     private getVaultRootPath(): string | null {
         const adapter = this.app.vault.adapter;
         if (adapter instanceof FileSystemAdapter) {
-            return adapter.getBasePath();
+            const basePath = adapter.getBasePath();
+            // Convert app:// protocol URLs to absolute file system paths
+            if (basePath && basePath.startsWith('app://')) {
+                // app://obsidian.md/path -> /path
+                return basePath.replace(/^app:\/\/[^\/]+/, '');
+            }
+            return basePath;
         }
         return null;
     }

@@ -6,4 +6,5 @@ examples/.obsidian/appearance.json
 ChatLog.md
 
 remotion-md/dist
-obsidian-remotion/main.js*
+obsidian-remotion/main.js
+obsidian-remotion/esbuild.wasm

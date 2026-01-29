@@ -1,9 +1,28 @@
-import { rollup } from 'rollup';
-import resolve from '@rollup/plugin-node-resolve';
-import commonjs from '@rollup/plugin-commonjs';
+import * as path from 'path';
+import type esbuild from 'esbuild';
 
 export interface BundleResult {
     code: string;
+}
+
+function loadEsbuild(nodeModulesPaths: string[]) {
+    // Prefer vault-local esbuild if present
+    for (const modulesPath of nodeModulesPaths) {
+        const candidate = path.join(modulesPath, 'esbuild');
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            return require(candidate);
+        } catch {
+            // continue
+        }
+    }
+
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        return require('esbuild');
+    } catch (err) {
+        throw new Error('esbuild not found. Install esbuild in your vault (npm i esbuild).');
+    }
 }
 
 export async function bundleVirtualModule(
@@ -11,49 +30,87 @@ export async function bundleVirtualModule(
     entryName: string,
     nodeModulesPaths: string[]
 ): Promise<BundleResult> {
-    const virtualEntryId = '\0virtual-entry';
+    console.log('[bundler] Starting bundleVirtualModule', { entryName, nodeModulesPaths });
 
-    const virtualPlugin = {
+    const esbuild = loadEsbuild(nodeModulesPaths);
+
+    // Create a virtual module resolver for esbuild
+    const virtualModulePlugin: esbuild.Plugin = {
         name: 'virtual-entry',
-        resolveId(id: string) {
-            if (id === entryName) return virtualEntryId;
-            return null;
-        },
-        load(id: string) {
-            if (id === virtualEntryId) return entryCode;
-            return null;
+        setup(build) {
+            build.onResolve({ filter: /^virtual-entry$/ }, () => {
+                console.log('[bundler] Resolved virtual-entry');
+                return { path: entryName, namespace: 'virtual' };
+            });
+
+            build.onResolve({ filter: /.*/ }, (args) => {
+                if (args.path === entryName || args.path.startsWith('/virtual/')) {
+                    console.log('[bundler] Resolved virtual path:', args.path);
+                    return { path: args.path, namespace: 'virtual' };
+                }
+                return null;
+            });
+
+            build.onLoad({ filter: /.*/, namespace: 'virtual' }, (args) => {
+                if (args.path === entryName || args.path.startsWith('/virtual/')) {
+                    console.log('[bundler] Loading virtual entry, code length:', entryCode.length);
+                    return {
+                        contents: entryCode,
+                        loader: 'ts',
+                    };
+                }
+                return null;
+            });
         },
     };
 
-    const bundle = await rollup({
-        input: entryName,
-        plugins: [
-            virtualPlugin,
-            resolve({
-                browser: true,
-                preferBuiltins: false,
-                extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
-                modulePaths: nodeModulesPaths,
-            }),
-            commonjs(),
-        ],
-        onwarn: (warning, warn) => {
-            if (warning.code === 'CIRCULAR_DEPENDENCY') return;
-            warn(warning);
-        },
-    });
+    try {
+        const result = await esbuild.build({
+            stdin: {
+                contents: `
+const sequence = require("${entryName}").default;
+module.exports = sequence;
+`,
+                resolveDir: process.cwd(),
+            },
+            bundle: true,
+            format: 'iife',
+            write: false,
+            logLevel: 'error',
+            external: [
+                'fs',
+                'path',
+                'obsidian',
+                'esbuild',
+                'react',
+                'react-dom',
+                'react-dom/client',
+                'remotion',
+                '@remotion/player',
+            ],
+            plugins: [virtualModulePlugin],
+            nodePaths: nodeModulesPaths.length > 0 ? nodeModulesPaths : undefined,
+        });
 
-    const { output } = await bundle.generate({
-        format: 'iife',
-        name: 'RemotionBundle',
-        inlineDynamicImports: true,
-        sourcemap: false,
-    });
+        console.log('[bundler] esbuild completed, outputs:', result.outputFiles.length);
 
-    const chunk = output.find((o) => o.type === 'chunk');
-    const code = (chunk && chunk.type === 'chunk') ? chunk.code : '';
+        if (result.outputFiles.length > 0) {
+            let rawCode = new TextDecoder().decode(result.outputFiles[0].contents);
+            console.log('[bundler] Final code length:', rawCode.length);
+            
+            // Fix: esbuild IIFE doesn't return the module result, add return statement
+            // Replace the last require_stdin() call with return require_stdin()
+            rawCode = rawCode.replace(/require_stdin\(\);(\s*}\)\(\);)/, 'return require_stdin();$1');
+            
+            // The IIFE already returns the bundle object, just assign it to window
+            const code = `window.RemotionBundle = ${rawCode}`;
+            return { code };
+        }
 
-    await bundle.close();
-
-    return { code };
+        console.log('[bundler] No output from esbuild');
+        return { code: '' };
+    } catch (err) {
+        console.error('[bundler] esbuild error:', err);
+        throw err;
+    }
 }

@@ -5,6 +5,7 @@ export interface CompileResult {
     diagnostics: readonly ts.Diagnostic[];
 }
 
+    // Prevent resolution of external runtime dependencies
 export function compileVirtualModule(
     fileName: string,
     sourceText: string

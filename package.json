@@ -9,8 +9,7 @@
   "scripts": {
     "build": "npm run build -w remotion-md && npm run build -w obsidian-remotion",
     "test": "npm test -w remotion-md",
-    "clean": "npm run clean -w remotion-md && rm -rf obsidian-remotion/main.js obsidian-remotion/main.js.map",
-    "watch": "npm run watch -w obsidian-remotion"
+    "clean": "npm run clean -w remotion-md && npm run clean -w obsidian-remotion"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

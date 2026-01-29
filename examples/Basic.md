@@ -1,7 +1,10 @@
 
 ```tsx
 import React from 'react';
-import { useCurrentFrame, interpolate } from 'remotion';
+import { 
+useCurrentFrame, interpolate } from 'remotion';
+
+throw new Error("aaa.")
 
 const Title: React.FC = () => {
 	const frame = useCurrentFrame();
