@@ -32,7 +32,7 @@ export class PreviewView extends ItemView {
         this.iframe.style.border = 'none';
         this.iframe.style.backgroundColor = '#000';
 
-        // Initialize iframe with a simple runtime that renders extractCodeBlocks output
+        // Initialize iframe with a simple runtime that renders synthesized module output
         this.iframe.srcdoc = `
             <!DOCTYPE html>
             <html>
@@ -58,14 +58,14 @@ export class PreviewView extends ItemView {
             </head>
             <body>
                 <h2>Remotion Preview</h2>
-                <p>Preview panel initialized. Awaiting extraction output...</p>
+                <p>Preview panel initialized. Awaiting synthesized module...</p>
                 <pre id="extract-output">No data yet</pre>
                 <script>
                     window.addEventListener('message', (event) => {
                         const data = event.data;
-                        if (!data || data.type !== 'extract-code-blocks') return;
+                        if (!data || data.type !== 'synthesized-module') return;
                         const pre = document.getElementById('extract-output');
-                        pre.textContent = JSON.stringify(data.payload, null, 2);
+                        pre.textContent = data.payload || 'No data';
                     });
                 </script>
             </body>
@@ -77,11 +77,11 @@ export class PreviewView extends ItemView {
         this.iframe = null;
     }
 
-    public updateExtractedBlocks(blocks: unknown) {
+    public updateSynthesizedModule(code: string) {
         if (!this.iframe?.contentWindow) return;
         this.iframe.contentWindow.postMessage({
-            type: 'extract-code-blocks',
-            payload: blocks,
+            type: 'synthesized-module',
+            payload: code,
         }, '*');
     }
 }

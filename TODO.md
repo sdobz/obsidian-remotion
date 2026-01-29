@@ -10,7 +10,7 @@
   - Test case: `Basic.md` should extract 2–3 blocks
 
 ### Block Classification  
-- [ ] **Classify extracted blocks into module vs JSX entry**
+- [x] **Classify extracted blocks into module vs JSX entry**
   - Semantics: Determine if a block is "module code" (imports, declarations) or "JSX entry code" (bare JSX to render)
   - Decision logic: Trim block, check if starts with `<`, lacks keywords, ends with `>` or `/>` → JSX entry
   - Output: List of blocks tagged as `{ ..., type: 'module' | 'jsx-entry', blockIndex }`
@@ -18,7 +18,7 @@
   - Test case: Mix module and JSX blocks; verify correct labels
 
 ### Virtual Module Synthesis
-- [ ] **Concatenate blocks into a single virtual TSX source**
+- [x] **Concatenate blocks into a single virtual TSX source**
   - Semantics: Merge all blocks into one cohesive TSX module, preserving source position data
   - Transformation: Insert sentinel comments `// --- block N @ File.md:LINE ---` between blocks
   - Output: Single string representing `/virtual/notes/File.tsx`

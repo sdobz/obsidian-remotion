@@ -9,6 +9,13 @@ export interface CodeBlock {
     endOffset: number;
 }
 
+export type BlockType = 'module' | 'jsx-entry';
+
+export interface ClassifiedBlock extends CodeBlock {
+    type: BlockType;
+    blockIndex: number;
+}
+
 /**
  * Extract all fenced code blocks with language ts, tsx, or typescript from markdown content.
  * 
@@ -115,3 +122,39 @@ export function blockPositionToMarkdown(
         column: 0,
     };
 }
+
+function isLikelyJsxEntry(content: string): boolean {
+    const trimmed = content.trim();
+    if (!trimmed.startsWith('<')) return false;
+
+    // Heuristic: if it contains module keywords, treat as module code
+    const keywordPattern = /\b(import|export|const|function|class)\b/;
+    if (keywordPattern.test(trimmed)) return false;
+
+    // Require a JSX-like closing
+    if (!(trimmed.endsWith('>') || trimmed.endsWith('/>'))) return false;
+
+    return true;
+}
+
+/**
+ * Classify extracted code blocks into module blocks and JSX entry blocks.
+ *
+ * @param blocks Extracted code blocks
+ * @returns Classified blocks with block indices
+ */
+export function classifyBlocks(blocks: CodeBlock[]): ClassifiedBlock[] {
+    return blocks.map((block, index) => ({
+        ...block,
+        blockIndex: index,
+        type: isLikelyJsxEntry(block.content) ? 'jsx-entry' : 'module',
+    }));
+}
+
+/**
+ * Synthesize a virtual TSX module by concatenating module blocks and wrapping JSX entry blocks.
+ *
+ * @param notePath Original markdown file path
+ * @param blocks Classified blocks
+ * @returns Synthesized module output with scene exports metadata
+ */

@@ -1,10 +1,12 @@
 import { Plugin, WorkspaceLeaf, MarkdownView } from 'obsidian';
 import { PreviewView, PREVIEW_VIEW_TYPE } from './previewView';
 import { PluginSettings, DEFAULT_SETTINGS, RemotionSettingTab } from './settings';
-import { extractCodeBlocks } from './extraction';
+import { extractCodeBlocks, classifyBlocks } from './extraction';
+import { synthesizeVirtualModule } from './synthesis';
 
 export default class RemotionPlugin extends Plugin {
     public settings!: PluginSettings;
+    private updateTimeoutId: number | null = null;
 
     async onload() {
         await this.loadSettings();
@@ -23,6 +25,13 @@ export default class RemotionPlugin extends Plugin {
         this.registerEvent(
             this.app.workspace.on('active-leaf-change', () => {
                 this.onActiveLeafChange();
+            })
+        );
+
+        // Debounced updates on editor change
+        this.registerEvent(
+            this.app.workspace.on('editor-change', () => {
+                this.schedulePreviewUpdate();
             })
         );
 
@@ -46,11 +55,7 @@ export default class RemotionPlugin extends Plugin {
         if (activeView) {
             // Active file is a markdown note, ensure preview is open
             await this.activateView();
-            const previewView = this.getPreviewView();
-            if (previewView) {
-                const blocks = extractCodeBlocks(activeView.editor.getValue());
-                previewView.updateExtractedBlocks(blocks);
-            }
+            this.schedulePreviewUpdate();
         } else {
             // No markdown file active, but keep preview open if user wants it
             // (They can close it manually or toggle with ribbon icon)
@@ -84,6 +89,28 @@ export default class RemotionPlugin extends Plugin {
             active: false,
         });
         this.app.workspace.revealLeaf(leaf);
+    }
+
+    private schedulePreviewUpdate() {
+        if (this.updateTimeoutId !== null) {
+            window.clearTimeout(this.updateTimeoutId);
+        }
+
+        this.updateTimeoutId = window.setTimeout(() => {
+            this.updateTimeoutId = null;
+            this.updatePreview();
+        }, 300);
+    }
+
+    private updatePreview() {
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        const previewView = this.getPreviewView();
+        if (!activeView || !previewView) return;
+
+        const blocks = extractCodeBlocks(activeView.editor.getValue());
+        const classified = classifyBlocks(blocks);
+        const synthesized = synthesizeVirtualModule(activeView.file?.path ?? 'Untitled.md', classified);
+        previewView.updateSynthesizedModule(synthesized.code);
     }
 
     private getPreviewView(): PreviewView | null {

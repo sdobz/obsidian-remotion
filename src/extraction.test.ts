@@ -1,4 +1,4 @@
-import { extractCodeBlocks } from './extraction';
+import { extractCodeBlocks, classifyBlocks } from './extraction';
 
 describe('Block Extraction', () => {
     test('extracts ts code blocks from markdown', () => {
@@ -153,4 +153,23 @@ export default MyScene;
         expect(blocks[0].content).toContain('import { Composition }');
         expect(blocks[0].content).toContain('export default MyScene;');
     });
+
+    test('classifies bare JSX as jsx-entry', () => {
+        const markdown = `
+\`\`\`tsx
+<Scene />
+\`\`\`
+
+\`\`\`tsx
+export const Foo = () => <div />;
+\`\`\`
+`;
+
+        const blocks = extractCodeBlocks(markdown);
+        const classified = classifyBlocks(blocks);
+
+        expect(classified[0].type).toBe('jsx-entry');
+        expect(classified[1].type).toBe('module');
+    });
+
 });
