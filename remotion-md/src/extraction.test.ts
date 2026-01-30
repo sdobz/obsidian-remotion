@@ -172,4 +172,20 @@ export const Foo = () => <div />;
         expect(classified[1].type).toBe('module');
     });
 
+    test('handles unclosed code blocks gracefully', () => {
+        const markdown = `
+# Document
+
+\`\`\`ts
+const x = 1;
+// Missing closing fence
+`;
+
+        const blocks = extractCodeBlocks(markdown);
+        
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].content).toBe('const x = 1;\n// Missing closing fence');
+        expect(blocks[0].language).toBe('ts');
+    });
+
 });

@@ -67,16 +67,13 @@ const diagnosticsField = StateField.define<ReturnType<typeof buildDecorations>>(
 export const editorDiagnosticsExtension: Extension = [diagnosticsField];
 
 export function applyEditorDiagnostics(view: EditorView, diagnostics: MarkdownDiagnostic[]) {
-    console.debug('[remotion][cm] apply diagnostics', diagnostics.length);
     const effects = [setDiagnosticsEffect.of(diagnostics)];
-    console.debug('[remotion][cm] dispatch diagnostics', effects.length);
     view.dispatch({
         effects,
     });
 }
 
 export function clearEditorDiagnostics(view: EditorView) {
-    console.debug('[remotion][cm] clear diagnostics');
     const effects = [setDiagnosticsEffect.of([])];
     view.dispatch({
         effects,

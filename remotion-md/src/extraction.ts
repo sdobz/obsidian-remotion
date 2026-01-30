@@ -50,6 +50,7 @@ export function extractCodeBlocks(content: string): CodeBlock[] {
                 currentOffset += line.length + 1; // +1 for newline
 
                 // Collect content until closing fence
+                let foundClosing = false;
                 while (i < lines.length) {
                     const contentLine = lines[i];
                     const contentTrimmed = contentLine.trim();
@@ -70,12 +71,26 @@ export function extractCodeBlocks(content: string): CodeBlock[] {
 
                         currentOffset += contentLine.length + 1;
                         i++;
+                        foundClosing = true;
                         break;
                     }
 
                     blockContent += contentLine + '\n';
                     currentOffset += contentLine.length + 1;
                     i++;
+                }
+                
+                // If we didn't find a closing fence (incomplete block), still include it
+                // to allow preview to continue working with partial content
+                if (!foundClosing && blockContent.trim()) {
+                    blocks.push({
+                        content: blockContent.trimEnd(),
+                        language,
+                        startLine,
+                        endLine: i - 1,
+                        startOffset,
+                        endOffset: currentOffset,
+                    });
                 }
             } else {
                 // Not a ts/tsx block, skip to next line

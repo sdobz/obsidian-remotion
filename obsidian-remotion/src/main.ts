@@ -5,7 +5,6 @@ import { editorDiagnosticsExtension } from './editorDiagnostics';
 import { CompilationManager } from './compilationManager';
 import { ScrollSync } from './scrollSync';
 import { ViewManager } from './viewManager';
-import { FocusSyncManager } from './focusSyncManager';
 import path from 'path';
 import fs from 'fs';
 
@@ -14,7 +13,6 @@ export default class RemotionPlugin extends Plugin {
     private compilationManager!: CompilationManager;
     private scrollSync!: ScrollSync;
     private viewManager!: ViewManager;
-    private focusSync!: FocusSyncManager;
 
     private handleIframeMessage = (event: MessageEvent) => {
         const data = event.data as { type?: string; sceneId?: string; scrollTop?: number };
@@ -25,16 +23,6 @@ export default class RemotionPlugin extends Plugin {
             if (activeView) {
                 this.scrollSync.syncPreviewToEditor(activeView, data.scrollTop || 0);
             }
-            return;
-        }
-
-        if (data.type === 'scene-activated') {
-            const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-            if (activeView && data.sceneId) {
-                const blocks = this.compilationManager.getLastExtractedBlocks();
-                this.focusSync.syncPreviewToEditor(activeView, data.sceneId, blocks);
-            }
-            return;
         }
     };
 
@@ -50,7 +38,6 @@ export default class RemotionPlugin extends Plugin {
         }
         this.scrollSync = new ScrollSync();
         this.viewManager = new ViewManager(this.app);
-        this.focusSync = new FocusSyncManager();
 
         // Set plugin directory for runtime
         this.setupPluginDirectory(vaultRoot);
@@ -72,10 +59,6 @@ export default class RemotionPlugin extends Plugin {
 
         this.registerEvent(
             this.app.workspace.on('editor-change', () => this.schedulePreviewUpdate())
-        );
-
-        this.registerEvent(
-            this.app.workspace.on('editor-change', () => this.scheduleFocusSync())
         );
 
         // Listen for messages from iframe
@@ -126,10 +109,6 @@ export default class RemotionPlugin extends Plugin {
         });
     }
 
-    private scheduleFocusSync(): void {
-        this.focusSync.scheduleSync(() => this.onCursorChange());
-    }
-
     private syncScroll(): void {
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
         const previewView = this.viewManager.getPreviewView();
@@ -137,15 +116,6 @@ export default class RemotionPlugin extends Plugin {
         if (activeView && previewView) {
             this.scrollSync.syncEditorToPreview(activeView, previewView);
         }
-    }
-
-    private onCursorChange(): void {
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-        const previewView = this.viewManager.getPreviewView();
-        if (!activeView || !previewView) return;
-
-        const blocks = this.compilationManager.getLastExtractedBlocks();
-        this.focusSync.syncCursorToPreview(activeView, previewView, blocks);
     }
 
     private async updatePreview(): Promise<void> {

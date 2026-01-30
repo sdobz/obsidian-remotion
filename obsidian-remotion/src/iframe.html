@@ -28,11 +28,6 @@
             right: 0;
             padding: 8px 12px;
             border-radius: 4px;
-            transition: background-color 0.2s;
-        }
-        #players > div.focused {
-            background-color: rgba(100, 150, 255, 0.1);
-            border: 1px solid rgba(100, 150, 255, 0.3);
         }
         #players > div > .player-wrapper {
             position: relative;
@@ -205,8 +200,6 @@
             }
         }
 
-        let __currentFocusedScene = null;
-
         window.addEventListener('message', (event) => {
             const data = event.data;
             if (!data) return;
@@ -214,15 +207,6 @@
             if (data.type === 'bundle-output') {
                 if (data.payload) {
                     loadBundle(data.payload, data.previewLocations || []);
-                }
-            } else if (data.type === 'focus-scene') {
-                __currentFocusedScene = data.sceneId;
-                const sceneEl = document.querySelector('[data-scene-id="' + data.sceneId + '"]');
-                if (sceneEl) {
-                    document.querySelectorAll('[data-scene-id]').forEach(el => {
-                        el.classList.remove('focused');
-                    });
-                    sceneEl.classList.add('focused');
                 }
             } else if (data.type === 'sync-scroll') {
                 // Update bottom padding if viewport height is provided

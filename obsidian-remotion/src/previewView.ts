@@ -6,19 +6,13 @@ export const PREVIEW_VIEW_TYPE = 'remotion-preview-view';
 export class PreviewView extends ItemView {
     private iframe: HTMLIFrameElement | null = null;
     private handleMessage = (event: MessageEvent) => {
-        const data = event.data as { type?: string; error?: { message?: string; stack?: string }; sceneId?: string };
+        const data = event.data as { type?: string; error?: { message?: string; stack?: string } };
         if (!data) return;
 
         if (data.type === 'runtime-error') {
             const message = data.error?.message ?? 'Unknown runtime error';
             const stack = data.error?.stack ?? '';
             console.error('Remotion runtime error:', message, stack);
-        } else if (data.type === 'scene-activated') {
-            // Forward scene activation to parent plugin
-            window.parent.postMessage({
-                type: 'scene-activated',
-                sceneId: data.sceneId,
-            }, '*');
         }
     };
 
@@ -137,14 +131,6 @@ export class PreviewView extends ItemView {
             type: 'bundle-output',
             payload: code,
             previewLocations,
-        }, '*');
-    }
-
-    public focusScene(sceneId: string) {
-        if (!this.iframe?.contentWindow) return;
-        this.iframe.contentWindow.postMessage({
-            type: 'focus-scene',
-            sceneId,
         }, '*');
     }
 

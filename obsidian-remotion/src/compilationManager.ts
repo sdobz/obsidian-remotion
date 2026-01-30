@@ -45,25 +45,56 @@ export class CompilationManager {
         previewView: PreviewView,
         version: number
     ): Promise<CompilationResult | null> {
-        if (!activeView.file) return null;
+        if (!activeView.file) {
+            return null;
+        }
 
         const startTime = performance.now();
+
+        let blocks: ReturnType<typeof extractCodeBlocks>;
+        let classified: ClassifiedBlock[];
         
-        // Extract and classify code blocks
-        const blocks = extractCodeBlocks(activeView.editor.getValue());
-        const classified = classifyBlocks(blocks);
-        this.lastExtractedBlocks = classified;
+        try {
+            // Extract and classify code blocks - should be resilient to partial input
+            blocks = extractCodeBlocks(activeView.editor.getValue());
+            classified = classifyBlocks(blocks);
+            
+            // Only update cached blocks if we have valid content
+            if (classified.length > 0) {
+                this.lastExtractedBlocks = classified;
+            }
+        } catch (err) {
+            console.error('[remotion] Failed to extract code blocks:', err);
+            // Keep last known good state to avoid disrupting preview
+            classified = this.lastExtractedBlocks;
+            if (classified.length === 0) return null;
+        }
         
         const notePath = activeView.file.path;
-        const synthesized = synthesizeVirtualModule(notePath, classified);
+        let synthesized: ReturnType<typeof synthesizeVirtualModule>;
+        
+        try {
+            synthesized = synthesizeVirtualModule(notePath, classified);
+        } catch (err) {
+            console.error('[remotion] Failed to synthesize module:', err);
+            // Continue with empty synthesis to prevent breaking the preview
+            return null;
+        }
         
         const absoluteNotePath = path.join(this.vaultRoot, notePath);
         const virtualFileName = absoluteNotePath.replace(/\.md$/, '.tsx');
         const nodeModulesPaths = this.findNodeModulesPaths(path.dirname(absoluteNotePath), this.vaultRoot);
         
-        // TypeScript compilation
+        // TypeScript compilation - wrapped in try-catch for resilience
         const tsStart = performance.now();
-        const compiled = compileVirtualModule(virtualFileName, synthesized.code, nodeModulesPaths);
+        let compiled: ReturnType<typeof compileVirtualModule>;
+        try {
+            compiled = compileVirtualModule(virtualFileName, synthesized.code, nodeModulesPaths);
+        } catch (err) {
+            console.error('[remotion] TypeScript compilation failed:', err);
+            // Show error but keep previous render
+            return null;
+        }
         const tsEnd = performance.now();
         
         let markdownDiagnostics = mapDiagnosticsToMarkdown(
@@ -75,19 +106,26 @@ export class CompilationManager {
         
         if (version !== this.updateVersion) return null;
         
-        // Bundling
+        // Bundling - wrapped in try-catch for resilience
         const bundleStart = performance.now();
-        const bundled = await bundleVirtualModule(
-            compiled.code,
-            virtualFileName,
-            nodeModulesPaths,
-            compiled.runtimeModules
-        );
+        let bundled: Awaited<ReturnType<typeof bundleVirtualModule>>;
+        try {
+            bundled = await bundleVirtualModule(
+                compiled.code,
+                virtualFileName,
+                nodeModulesPaths,
+                compiled.runtimeModules
+            );
+        } catch (err) {
+            console.error('[remotion] Bundle failed:', err);
+            // Return fallback result with error message
+            bundled = { code: '/* Bundle failed - see console */', error: err as Error };
+        }
         const bundleEnd = performance.now();
         
         if (version !== this.updateVersion) return null;
 
-        // Add bundle errors to diagnostics
+        // Add bundle errors to diagnostics, but don't prevent rendering
         if (bundled.error) {
             const bundleError = parseBundleError(bundled.error, classified);
             if (bundleError) {
@@ -98,17 +136,22 @@ export class CompilationManager {
         // Apply diagnostics to editor
         this.updateEditorDiagnostics(activeView, markdownDiagnostics);
 
-        // Calculate preview locations with pixel offsets
-        const editorEl = (activeView.editor as any).cm;
-        const lineHeight = editorEl?.defaultLineHeight || 20;
-        
-        const previewLocations = compiled.previewLocations.map(loc => ({
-            line: loc.line,
-            column: loc.column,
-            topOffset: (loc.line - 1) * lineHeight,
-            text: loc.text,
-            options: loc.options,
-        }));
+        // Calculate preview locations with pixel offsets - handle missing data gracefully
+        let previewLocations: CompilationResult['previewLocations'] = [];
+        try {
+            const editorEl = (activeView.editor as any).cm;
+            const lineHeight = editorEl?.defaultLineHeight || 20;
+            
+            previewLocations = compiled.previewLocations.map(loc => ({
+                line: loc.line,
+                column: loc.column,
+                topOffset: (loc.line - 1) * lineHeight,
+                text: loc.text,
+                options: loc.options,
+            }));
+        } catch (err) {
+            console.warn('[remotion] Failed to calculate preview locations:', err);
+        }
 
         // Log performance metrics
         const endTime = performance.now();
@@ -122,7 +165,7 @@ export class CompilationManager {
         return {
             blocks: classified,
             previewLocations,
-            bundleCode: bundled.code || '/* no output */',
+            bundleCode: bundled.code || '/* Bundle failed - see diagnostics */',
             runtimeModules: compiled.runtimeModules,
         };
     }
