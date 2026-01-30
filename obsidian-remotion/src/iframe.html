@@ -19,6 +19,8 @@
             position: relative;
             width: 100%;
             min-height: 100vh;
+            /* Dynamic bottom padding set via JavaScript based on editor viewport height */
+            padding-bottom: 600px;
         }
         #players > div {
             position: absolute;
@@ -68,13 +70,6 @@
             const playersEl = document.getElementById('players');
 
             if (!React || !ReactDomClient || !Player || !playersEl) {
-                console.error('[renderPlayers] Missing dependencies:', {
-                    react: !!React,
-                    player: !!Player,
-                    reactDom: !!ReactDomClient,
-                    playersEl: !!playersEl,
-                    playerModule: PlayerModule ? Object.keys(PlayerModule) : 'undefined'
-                });
                 throw new Error('Missing React, ReactDOM, or @remotion/player');
             }
 
@@ -128,7 +123,8 @@
             }
 
             // After rendering, adjust positions based on actual heights to prevent overlap
-            requestAnimationFrame(() => {
+            // Use setTimeout to ensure React has fully rendered the players
+            setTimeout(() => {
                 const MIN_SPACING = 16;
                 const playerElements = Array.from(playersEl.querySelectorAll('[data-scene-id]'));
                 const adjustedPositions = [];
@@ -147,9 +143,10 @@
                     el.style.top = actualTop + 'px';
                 });
 
-                // Update container height
-                playersEl.style.minHeight = (lastBottom + 100) + 'px';
-            });
+                // Update container min-height but preserve padding-bottom
+                const currentPadding = parseInt(playersEl.style.paddingBottom || '600');
+                playersEl.style.minHeight = (lastBottom + currentPadding) + 'px';
+            }, 100);
         }
 
         function loadBundle(code, blockPositions) {
@@ -159,24 +156,6 @@
                 eval(code);
                 const mod = window.RemotionBundle;
                 const sequence = (mod && mod.default) || mod;
-                
-                console.log('[iframe] Bundle loaded:', {
-                    hasModule: !!mod,
-                    hasDefault: !!(mod && mod.default),
-                    sequence: sequence,
-                    scenes: sequence && sequence.scenes,
-                    moduleKeys: mod ? Object.keys(mod) : []
-                });
-                
-                if (sequence && sequence.scenes) {
-                    sequence.scenes.forEach((scene, idx) => {
-                        console.log(`[iframe] Scene ${idx}:`, {
-                            id: scene.id,
-                            component: scene.component,
-                            componentType: typeof scene.component
-                        });
-                    });
-                }
                 
                 if (!sequence || !sequence.scenes) {
                     throw new Error('Bundle did not export a default Sequence');
@@ -211,6 +190,15 @@
                     sceneEl.classList.add('focused');
                 }
             } else if (data.type === 'sync-scroll') {
+                // Update bottom padding if viewport height is provided
+                if (data.viewportHeight) {
+                    const playersEl = document.getElementById('players');
+                    if (playersEl) {
+                        // Match editor behavior: allow last content to scroll to top
+                        const padding = Math.max(data.viewportHeight - 200, 400);
+                        playersEl.style.paddingBottom = padding + 'px';
+                    }
+                }
                 window.scrollTo({ top: data.scrollTop, behavior: 'auto' });
             }
         });
@@ -224,7 +212,7 @@
                     type: 'iframe-scroll',
                     scrollTop: window.scrollY
                 }, '*');
-            }, 10);
+            }, 5);
         });
 
         window.parent.postMessage({ type: 'iframe-ready' }, '*');

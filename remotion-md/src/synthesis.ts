@@ -42,7 +42,8 @@ export function synthesizeVirtualModule(
 
     // Add preview tracking state at module level
     moduleParts.push('// --- preview tracking ---');
-    moduleParts.push('window.__previewScenes = [];');
+    moduleParts.push('(globalThis as any).__previewScenes = [];');
+    moduleParts.push('(globalThis as any).__previewShots = [];');
 
     for (const block of blocks) {
         if (block.type === 'jsx-entry') {
@@ -59,11 +60,11 @@ export function synthesizeVirtualModule(
         }
     }
 
-    // Export tracked scenes from window
+    // Export tracked scenes from globalThis
     sequenceParts.push('// --- scene exports ---');
     for (let i = 0; i < sceneExports.length; i++) {
         const exportName = sceneExports[i].exportName;
-        sequenceParts.push(`export const ${exportName} = window.__previewScenes[${i}];`);
+        sequenceParts.push(`export const ${exportName} = (globalThis as any).__previewScenes[${i}];`);
     }
 
     sequenceParts.push('// --- sequence export ---');

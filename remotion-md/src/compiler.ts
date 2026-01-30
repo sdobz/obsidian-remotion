@@ -38,10 +38,6 @@ export function compileVirtualModule(
     // Virtual paths like /virtual/Basic.md.tsx need to resolve from a real directory
     const resolutionDirectory = getResolutionDirectory(nodeModulesPaths, path.dirname(fileName));
 
-    console.debug(`[compiler][ts] fileName: ${fileName}`);
-    console.debug(`[compiler][ts] resolutionDirectory: ${resolutionDirectory}`);
-    console.debug(`[compiler][ts] nodeModulesPaths: ${JSON.stringify(nodeModulesPaths)}`);
-
     const compilerOptions: ts.CompilerOptions = {
         jsx: ts.JsxEmit.React,
         target: ts.ScriptTarget.ES2020,
@@ -81,7 +77,6 @@ export function compileVirtualModule(
             // This allows TypeScript's Node resolution to walk up and find:
             // - resolutionDirectory/node_modules
             // - parent directories' node_modules (hoisted)
-            console.debug(`[compiler][ts] getCurrentDirectory() = ${resolutionDirectory}`);
             return resolutionDirectory;
         },
         getDirectories: (dirPath) => {
@@ -121,15 +116,7 @@ export function compileVirtualModule(
                 ? path.join(currentDir, path.basename(containingFile))
                 : containingFile;
             
-            console.debug(`[compiler][ts] resolveModuleNames called:`);
-            console.debug(`[compiler][ts]   moduleNames: ${JSON.stringify(moduleNames)}`);
-            console.debug(`[compiler][ts]   containingFile: ${containingFile} -> ${realContainingFile}`);
-            console.debug(`[compiler][ts]   currentDir: ${currentDir}`);
-            console.debug(`[compiler][ts]   compilerOptions.moduleResolution: ${compilerOptions.moduleResolution}`);
-            
             return moduleNames.map(moduleName => {
-                console.debug(`[compiler][ts] Resolving: ${moduleName} from ${realContainingFile}`);
-                
                 // Use TypeScript's resolveModuleName which handles:
                 // - Relative imports (./xxx, ../xxx)
                 // - Node module resolution
@@ -144,11 +131,9 @@ export function compileVirtualModule(
                 );
                 
                 if (resolved.resolvedModule) {
-                    console.debug(`[compiler][ts] ✓ Resolved ${moduleName} to ${resolved.resolvedModule.resolvedFileName}`);
                     return resolved.resolvedModule;
                 }
                 
-                console.debug(`[compiler][ts] ✗ Failed to resolve: ${moduleName}`);
                 return undefined;
             });
         },

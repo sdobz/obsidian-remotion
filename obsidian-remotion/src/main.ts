@@ -209,7 +209,7 @@ export default class RemotionPlugin extends Plugin {
         this.scrollSyncTimeoutId = window.setTimeout(() => {
             this.scrollSyncTimeoutId = null;
             this.syncScroll();
-        }, 10);
+        }, 5);
     }
 
     private syncScroll() {
@@ -221,13 +221,14 @@ export default class RemotionPlugin extends Plugin {
         if (!activeView || !previewView) return;
 
         const editorEl = (activeView.editor as any).cm;
-        const scrollInfo = editorEl?.scrollDOM;
+        const scrollDOM = editorEl?.scrollDOM;
         
-        if (scrollInfo) {
-            const scrollTop = scrollInfo.scrollTop;
+        if (scrollDOM) {
+            const scrollTop = scrollDOM.scrollTop;
+            const viewportHeight = scrollDOM.clientHeight || 600;
             this.isSyncingScroll = true;
-            previewView.syncScroll(scrollTop);
-            setTimeout(() => { this.isSyncingScroll = false; }, 100);
+            previewView.syncScroll(scrollTop, viewportHeight);
+            setTimeout(() => { this.isSyncingScroll = false; }, 50);
         }
     }
 
@@ -243,7 +244,7 @@ export default class RemotionPlugin extends Plugin {
         if (scrollDOM) {
             this.isSyncingScroll = true;
             scrollDOM.scrollTop = scrollTop;
-            setTimeout(() => { this.isSyncingScroll = false; }, 100);
+            setTimeout(() => { this.isSyncingScroll = false; }, 50);
         }
     }
 
@@ -270,6 +271,7 @@ export default class RemotionPlugin extends Plugin {
     }
 
     private async updatePreview(version: number) {
+        const startTime = performance.now();
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
         const previewView = this.getPreviewView();
         if (!activeView || !previewView || !activeView.file) return;
@@ -291,19 +293,18 @@ export default class RemotionPlugin extends Plugin {
         // Use real file path with .tsx extension for TypeScript and esbuild
         const virtualFileName = absoluteNotePath.replace(/\.md$/, '.tsx');
         const nodeModulesPaths = this.findNodeModulesPaths(path.dirname(absoluteNotePath), vaultRoot);
-        console.debug('[plugin] vaultRoot:', vaultRoot);
-        console.debug('[plugin] absoluteNotePath:', absoluteNotePath);
-        console.debug('[plugin] tsxFileName:', virtualFileName);
-        console.debug('[plugin] nodeModulesPaths:', nodeModulesPaths);
-        console.debug('[plugin] Synthesized code:\n', synthesized.code);
         
+        const tsStart = performance.now();
         const compiled = compileVirtualModule(virtualFileName, synthesized.code, nodeModulesPaths);
-        console.debug('[plugin] Compilation diagnostics:', compiled.diagnostics.length);
-        console.debug('[plugin] Runtime modules:', Array.from(compiled.runtimeModules));
-        console.debug('[plugin] Compiled code:\n', compiled.code.substring(0, 500));
+        const tsEnd = performance.now();
+        
         let markdownDiagnostics = mapDiagnosticsToMarkdown(compiled.diagnostics, synthesized.code, classified, synthesized.sceneExports);
         if (version !== this.updateVersion) return;
+        
+        const bundleStart = performance.now();
         const bundled = await bundleVirtualModule(compiled.code, virtualFileName, nodeModulesPaths, compiled.runtimeModules);
+        const bundleEnd = performance.now();
+        
         if (version !== this.updateVersion) return;
 
         // Add bundle errors to diagnostics
@@ -332,6 +333,14 @@ export default class RemotionPlugin extends Plugin {
             }));
 
         previewView.updateBundleOutput(bundled.code || '/* no output */', blockPositions, compiled.runtimeModules);
+        
+        const endTime = performance.now();
+        const totalTime = endTime - startTime;
+        const tsTime = tsEnd - tsStart;
+        const bundleTime = bundleEnd - bundleStart;
+        const reloadTime = endTime - bundleEnd;
+        
+        console.log(`[remotion] TypeScript: ${tsTime.toFixed(1)}ms | Bundle: ${bundleTime.toFixed(1)}ms | Reload: ${reloadTime.toFixed(1)}ms | Total: ${totalTime.toFixed(1)}ms`);
     }
 
     private updateEditorDiagnostics(activeView: MarkdownView, diagnostics: ReturnType<typeof mapDiagnosticsToMarkdown>) {

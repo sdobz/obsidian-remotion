@@ -148,13 +148,14 @@ export class PreviewView extends ItemView {
         }, '*');
     }
 
-    public syncScroll(scrollTop: number) {
+    public syncScroll(scrollTop: number, viewportHeight?: number) {
         if (!this.iframe?.contentWindow) {
             return;
         }
         this.iframe.contentWindow.postMessage({
             type: 'sync-scroll',
             scrollTop,
+            viewportHeight,
         }, '*');
     }
 }

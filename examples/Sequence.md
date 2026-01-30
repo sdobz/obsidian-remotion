@@ -37,10 +37,10 @@ preview(
 )
 ```
 
-## Shot 2
+
 
 ```tsx
 preview(
-	<Title>Another Title</Title>
+	<Title>Another Title?</Title>
 )
 ```

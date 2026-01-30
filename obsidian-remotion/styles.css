@@ -15,3 +15,14 @@
 .remotion-diagnostic--error {
   text-decoration-color: var(--text-error);
 }
+
+.remotion-preview-container {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.remotion-preview-iframe {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
