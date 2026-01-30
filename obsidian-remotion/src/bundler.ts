@@ -34,6 +34,28 @@ export async function bundleVirtualModule(
 ): Promise<BundleResult> {
     const esbuild = loadEsbuild(nodeModulesPaths);
 
+    // Plugin to mock Node builtins that get bundled from remotion-md
+    const nodeBuiltinsMockPlugin: esbuild.Plugin = {
+        name: 'node-builtins-mock',
+        setup(build) {
+            const builtins = ['fs', 'path', 'os', 'crypto', 'util', 'stream', 'events'];
+            
+            for (const builtin of builtins) {
+                build.onResolve({ filter: new RegExp(`^${builtin}$`) }, (args) => {
+                    // Only mock if it's being bundled (not already external)
+                    return { path: builtin, namespace: 'node-builtin-mock' };
+                });
+                
+                build.onLoad({ filter: /.*/, namespace: 'node-builtin-mock' }, (args) => {
+                    return {
+                        contents: `module.exports = {};`,
+                        loader: 'js',
+                    };
+                });
+            }
+        },
+    };
+
     // Create a virtual module resolver for esbuild
     const virtualModulePlugin: esbuild.Plugin = {
         name: 'virtual-entry',
@@ -51,9 +73,16 @@ export async function bundleVirtualModule(
 
             build.onLoad({ filter: /.*/, namespace: 'virtual' }, (args) => {
                 if (args.path === entryName || args.path.startsWith('/virtual/')) {
+                    // Use the same resolution directory as TypeScript compiler
+                    // First nodeModulesPath gives us the directory where the file logically exists
+                    const resolveDir = nodeModulesPaths.length > 0
+                        ? path.dirname(nodeModulesPaths[0])
+                        : path.dirname(args.path);
+                    
                     return {
                         contents: entryCode,
-                        loader: 'ts',
+                        loader: 'tsx',
+                        resolveDir,
                     };
                 }
                 return null;
@@ -61,13 +90,11 @@ export async function bundleVirtualModule(
         },
     };
 
-    // Build external list: always include node internals + esbuild's own modules
-    // Add runtime modules to external so they're resolved at runtime
+    // Only externalize core frameworks that will be provided at runtime
+    // Node builtins are mocked by nodeBuiltinsMockPlugin
     const externalModules = [
-        'fs',
-        'path',
         'obsidian',
-        'esbuild',
+        'electron',
         'react',
         'react-dom',
         'react-dom/client',
@@ -75,29 +102,27 @@ export async function bundleVirtualModule(
         '@remotion/player',
     ];
 
-    if (runtimeModules) {
-        for (const mod of runtimeModules) {
-            if (!externalModules.includes(mod)) {
-                externalModules.push(mod);
-            }
-        }
-    }
-
     try {
+        // Use the same resolution directory as TypeScript compiler and virtual module
+        // First nodeModulesPath gives us the directory where the file logically exists
+        const resolveDir = nodeModulesPaths.length > 0
+            ? path.dirname(nodeModulesPaths[0])
+            : process.cwd();
+        
         const result = await esbuild.build({
             stdin: {
                 contents: `
 const sequence = require("${entryName}").default;
 module.exports = sequence;
 `,
-                resolveDir: process.cwd(),
+                resolveDir,
             },
             bundle: true,
             format: 'iife',
             write: false,
             logLevel: 'error',
             external: externalModules,
-            plugins: [virtualModulePlugin],
+            plugins: [nodeBuiltinsMockPlugin, virtualModulePlugin],
             nodePaths: nodeModulesPaths.length > 0 ? nodeModulesPaths : undefined,
         });
 

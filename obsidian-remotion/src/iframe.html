@@ -159,6 +159,25 @@
                 eval(code);
                 const mod = window.RemotionBundle;
                 const sequence = (mod && mod.default) || mod;
+                
+                console.log('[iframe] Bundle loaded:', {
+                    hasModule: !!mod,
+                    hasDefault: !!(mod && mod.default),
+                    sequence: sequence,
+                    scenes: sequence && sequence.scenes,
+                    moduleKeys: mod ? Object.keys(mod) : []
+                });
+                
+                if (sequence && sequence.scenes) {
+                    sequence.scenes.forEach((scene, idx) => {
+                        console.log(`[iframe] Scene ${idx}:`, {
+                            id: scene.id,
+                            component: scene.component,
+                            componentType: typeof scene.component
+                        });
+                    });
+                }
+                
                 if (!sequence || !sequence.scenes) {
                     throw new Error('Bundle did not export a default Sequence');
                 }

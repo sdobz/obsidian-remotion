@@ -113,8 +113,10 @@ export function blockPositionToMarkdown(
 function isLikelyJsxEntry(content: string): boolean {
     const trimmed = content.trim();
     
-    // Check for preview(...) call pattern
-    if (/^\s*preview\s*\([\s\S]*\)\s*$/.test(trimmed)) {
+    // Check for preview(...) call pattern (may include import statement)
+    // Match: optional imports, then preview(...) call
+    const previewPattern = /(?:import\s+.*?;\s*)*preview\s*\(/s;
+    if (previewPattern.test(trimmed)) {
         return true;
     }
     

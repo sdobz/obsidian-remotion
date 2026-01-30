@@ -40,7 +40,7 @@ preview(
 ## Shot 2
 
 ```tsx
-shot(
+preview(
 	<Title>Another Title</Title>
 )
 ```

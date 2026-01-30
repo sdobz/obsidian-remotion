@@ -279,7 +279,6 @@ export default class RemotionPlugin extends Plugin {
         this.lastExtractedBlocks = classified;
         
         const notePath = activeView.file.path;
-        const virtualFileName = `/virtual/${notePath}.tsx`;
         const synthesized = synthesizeVirtualModule(notePath, classified);
         
         const vaultRoot = this.getVaultRootPath();
@@ -289,15 +288,19 @@ export default class RemotionPlugin extends Plugin {
         }
 
         const absoluteNotePath = path.join(vaultRoot, notePath);
+        // Use real file path with .tsx extension for TypeScript and esbuild
+        const virtualFileName = absoluteNotePath.replace(/\.md$/, '.tsx');
         const nodeModulesPaths = this.findNodeModulesPaths(path.dirname(absoluteNotePath), vaultRoot);
         console.debug('[plugin] vaultRoot:', vaultRoot);
         console.debug('[plugin] absoluteNotePath:', absoluteNotePath);
+        console.debug('[plugin] tsxFileName:', virtualFileName);
         console.debug('[plugin] nodeModulesPaths:', nodeModulesPaths);
-        console.debug('[plugin] Compiling:', virtualFileName);
+        console.debug('[plugin] Synthesized code:\n', synthesized.code);
         
         const compiled = compileVirtualModule(virtualFileName, synthesized.code, nodeModulesPaths);
         console.debug('[plugin] Compilation diagnostics:', compiled.diagnostics.length);
         console.debug('[plugin] Runtime modules:', Array.from(compiled.runtimeModules));
+        console.debug('[plugin] Compiled code:\n', compiled.code.substring(0, 500));
         let markdownDiagnostics = mapDiagnosticsToMarkdown(compiled.diagnostics, synthesized.code, classified, synthesized.sceneExports);
         if (version !== this.updateVersion) return;
         const bundled = await bundleVirtualModule(compiled.code, virtualFileName, nodeModulesPaths, compiled.runtimeModules);

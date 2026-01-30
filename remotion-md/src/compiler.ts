@@ -10,6 +10,17 @@ export interface CompileResult {
 }
 
 /**
+ * Derive the real directory for module resolution from nodeModulesPaths.
+ * Takes the first path (closest to file) and returns its parent directory.
+ * E.g., /path/examples/node_modules -> /path/examples
+ */
+export function getResolutionDirectory(nodeModulesPaths: string[], fallback: string): string {
+    return nodeModulesPaths.length > 0
+        ? path.dirname(nodeModulesPaths[0])
+        : fallback;
+}
+
+/**
  * Compile virtual module with support for runtime modules
  * @param fileName Virtual file name (e.g., /virtual/path.tsx)
  * @param sourceText Source code to compile
@@ -23,6 +34,14 @@ export function compileVirtualModule(
     // Extract runtime modules from the code
     const runtimeModules = getRuntimeModules(sourceText);
 
+    // Derive the real directory for module resolution
+    // Virtual paths like /virtual/Basic.md.tsx need to resolve from a real directory
+    const resolutionDirectory = getResolutionDirectory(nodeModulesPaths, path.dirname(fileName));
+
+    console.debug(`[compiler][ts] fileName: ${fileName}`);
+    console.debug(`[compiler][ts] resolutionDirectory: ${resolutionDirectory}`);
+    console.debug(`[compiler][ts] nodeModulesPaths: ${JSON.stringify(nodeModulesPaths)}`);
+
     const compilerOptions: ts.CompilerOptions = {
         jsx: ts.JsxEmit.React,
         target: ts.ScriptTarget.ES2020,
@@ -32,8 +51,7 @@ export function compileVirtualModule(
         noLib: true,
         skipLibCheck: true,
         esModuleInterop: true,
-        // Set baseUrl and paths so TypeScript searches in provided node_modules
-        baseUrl: nodeModulesPaths.length > 0 ? nodeModulesPaths[0] : undefined,
+        // Don't set baseUrl - let Node resolution walk up from file location
     };
 
     // Create file map with only the source file
@@ -58,7 +76,14 @@ export function compileVirtualModule(
         },
         getDefaultLibFileName: () => 'lib.d.ts',
         writeFile: () => {},
-        getCurrentDirectory: () => '/',
+        getCurrentDirectory: () => {
+            // Return the real directory (not virtual path)
+            // This allows TypeScript's Node resolution to walk up and find:
+            // - resolutionDirectory/node_modules
+            // - parent directories' node_modules (hoisted)
+            console.debug(`[compiler][ts] getCurrentDirectory() = ${resolutionDirectory}`);
+            return resolutionDirectory;
+        },
         getDirectories: (dirPath) => {
             try {
                 return fs.readdirSync(dirPath);
@@ -87,9 +112,24 @@ export function compileVirtualModule(
         getNewLine: () => '\n',
         resolveModuleNames: (moduleNames, containingFile) => {
             // Use TypeScript's built-in module resolution
-            const resolutionCache = ts.createModuleResolutionCache('/', host.getCanonicalFileName);
+            const currentDir = host.getCurrentDirectory();
+            const resolutionCache = ts.createModuleResolutionCache(currentDir, host.getCanonicalFileName);
+            
+            // If the containing file is virtual, use a real path for resolution
+            // TypeScript's Node resolution needs a real file to walk up from
+            const realContainingFile = containingFile.startsWith('/virtual/')
+                ? path.join(currentDir, path.basename(containingFile))
+                : containingFile;
+            
+            console.debug(`[compiler][ts] resolveModuleNames called:`);
+            console.debug(`[compiler][ts]   moduleNames: ${JSON.stringify(moduleNames)}`);
+            console.debug(`[compiler][ts]   containingFile: ${containingFile} -> ${realContainingFile}`);
+            console.debug(`[compiler][ts]   currentDir: ${currentDir}`);
+            console.debug(`[compiler][ts]   compilerOptions.moduleResolution: ${compilerOptions.moduleResolution}`);
             
             return moduleNames.map(moduleName => {
+                console.debug(`[compiler][ts] Resolving: ${moduleName} from ${realContainingFile}`);
+                
                 // Use TypeScript's resolveModuleName which handles:
                 // - Relative imports (./xxx, ../xxx)
                 // - Node module resolution
@@ -97,18 +137,18 @@ export function compileVirtualModule(
                 // - Extension resolution
                 const resolved = ts.resolveModuleName(
                     moduleName,
-                    containingFile,
+                    realContainingFile,
                     compilerOptions,
                     host,
                     resolutionCache
                 );
                 
                 if (resolved.resolvedModule) {
-                    console.debug(`[compiler] ✓ Resolved ${moduleName} to ${resolved.resolvedModule.resolvedFileName}`);
+                    console.debug(`[compiler][ts] ✓ Resolved ${moduleName} to ${resolved.resolvedModule.resolvedFileName}`);
                     return resolved.resolvedModule;
                 }
                 
-                console.debug(`[compiler] ✗ Failed to resolve: ${moduleName}`);
+                console.debug(`[compiler][ts] ✗ Failed to resolve: ${moduleName}`);
                 return undefined;
             });
         },
