@@ -29,8 +29,6 @@ const Title: React.FC = () => {
 ```
 
 ```tsx
-import { preview } from 'remotion-md';
-
 preview(
 	<Title />
 )

@@ -30,6 +30,7 @@ export interface PreviewCallLocation {
     options?: PreviewPlayerOptions;
 }
 
+
 /**
  * Extract locations of all preview() function calls from TypeScript AST.
  * Used to anchor scroll positions in the preview pane.
@@ -110,3 +111,7 @@ export function extractPreviewCallLocations(sourceFile: ts.SourceFile): PreviewC
     visit(sourceFile);
     return locations;
 }
+
+/**
+ * Detect preview() misuse, such as passing JSX instead of a component reference.
+ */

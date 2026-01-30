@@ -103,6 +103,7 @@ export class CompilationManager {
             classified,
             synthesized.sceneExports
         );
+
         
         if (version !== this.updateVersion) return null;
         

@@ -6,7 +6,6 @@ import { extractCodeBlocks, classifyBlocks } from './extraction';
 import { synthesizeVirtualModule } from './synthesis';
 import { compileVirtualModule } from './compiler';
 import { extractPreviewCallLocations, PreviewPlayerOptions } from './previewLocations';
-import { PREVIEW_DEFAULTS } from './preview';
 
 interface RenderConfig {
     compositionId?: string;
@@ -16,6 +15,16 @@ interface RenderConfig {
     fps?: number;
     durationInFrames?: number;
 }
+
+const PREVIEW_DEFAULTS: PreviewPlayerOptions = {
+    durationInFrames: 150,
+    fps: 30,
+    compositionWidth: 1280,
+    compositionHeight: 720,
+    controls: true,
+    loop: false,
+    autoPlay: false,
+};
 
 function parseCliArgs(): { mdPath: string; config: RenderConfig; remotionArgs: string[] } {
     const args = process.argv.slice(2);

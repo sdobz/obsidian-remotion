@@ -29,9 +29,11 @@ const Title: React.FC = () => {
 ```
 
 ```tsx
-import { preview } from 'remotion-md';
-
 preview(
-	<Title />
-)
+	() => <Title />
+, { durationInFrames: 30 })
+```
+
+```bash
+npx remotion-md Render.md --out
 ```

@@ -135,6 +135,10 @@ export function mapDiagnosticsToMarkdown(
 }
 
 /**
+ * Map preview misuse diagnostics (from AST) back to markdown positions.
+ */
+
+/**
  * Parse a bundle error and map it to a markdown diagnostic
  * Format: "virtual:/virtual/path.md.tsx:21:21: ERROR: message"
  */

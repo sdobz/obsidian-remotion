@@ -2,8 +2,6 @@
 ```tsx
 import React from 'react';
 import { useCurrentFrame, interpolate, Series, Composition, Sequence } from 'remotion';
-import { preview } from 'remotion-md';
-
 const Title: React.FC<React.PropsWithChildren> = ({children}) => {
 	const frame = useCurrentFrame();
 	const opacity = interpolate(frame, [0, 30], [0, 1]);
