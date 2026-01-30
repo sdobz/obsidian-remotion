@@ -1,10 +1,10 @@
 
 ```tsx
 import React from 'react';
-import { useCurrentFrame, interpolate } from 'remotion';
+import { useCurrentFrame, interpolate, Series, Composition, Sequence } from 'remotion';
 import { preview } from 'remotion-md';
 
-const Title: React.FC = ({children}) => {
+const Title: React.FC<React.PropsWithChildren> = ({children}) => {
 	const frame = useCurrentFrame();
 	const opacity = interpolate(frame, [0, 30], [0, 1]);
 
@@ -27,20 +27,24 @@ const Title: React.FC = ({children}) => {
 		</div>
 	);
 };
-```
 
-## Scene 1
-
-```tsx
-preview(
+const First= preview(
+	() => <Sequence durationInFrames={30}>
 	<Title>Hello Remotion</Title>
+	</Sequence>
 )
-```
 
-
-
-```tsx
-preview(
-	<Title>Another Title?</Title>
+const Second = preview(
+	() => <Title>Another Title</Title>
 )
+
+
+preview(() => <Series>
+	<Series.Sequence durationInFrames={30}>
+		<First />
+	</Series.Sequence>
+	<Series.Sequence durationInFrames={30}>
+		<Second />
+	</Series.Sequence>
+</Series>)
 ```

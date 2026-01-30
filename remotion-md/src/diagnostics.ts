@@ -94,28 +94,20 @@ export function mapDiagnosticsToMarkdown(
         blockMap.set(block.blockIndex, block);
     }
 
-    const sceneExportMap = new Map<number, SceneExport>();
-    for (const sceneExport of sceneExports) {
-        sceneExportMap.set(sceneExport.blockIndex, sceneExport);
-    }
-
     const results: MarkdownDiagnostic[] = [];
 
     for (const diagnostic of diagnostics) {
         if (!diagnostic.file || diagnostic.start === undefined) continue;
 
         const position = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
+        
         const sentinel = findSentinelForLine(sentinels, position.line);
         if (!sentinel) continue;
 
         const block = blockMap.get(sentinel.blockIndex);
         if (!block) continue;
 
-        const isJsxEntry = block.type === 'jsx-entry';
-        const contentStartLineOffset = isJsxEntry
-            ? (sceneExportMap.get(sentinel.blockIndex)?.contentStartLineOffset ?? 2)
-            : 0;
-        const contentStartLine = sentinel.lineIndex + contentStartLineOffset + 1;
+        const contentStartLine = sentinel.lineIndex + 1;
         const blockLineCount = Math.max(0, block.endLine - block.startLine);
 
         let markdownLine = block.startLine;

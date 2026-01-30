@@ -321,18 +321,16 @@ export default class RemotionPlugin extends Plugin {
         const editorEl = (activeView.editor as any).cm;
         const lineHeight = editorEl?.defaultLineHeight || 20;
         
-        // Map only JSX entry blocks to their pixel positions
-        // (non-JSX blocks don't render players in the preview)
-        const blockPositions = classified
-            .filter(block => block.type === 'jsx-entry')
-            .map(block => ({
-                sceneId: blockIndexToSceneId(block.blockIndex),
-                startLine: block.startLine,
-                endLine: block.endLine,
-                topOffset: block.startLine * lineHeight,
-            }));
+        // Map preview call locations to pixel positions for scrolling
+        const previewLocations = compiled.previewLocations.map(loc => ({
+            line: loc.line,
+            column: loc.column,
+            topOffset: (loc.line - 1) * lineHeight, // Convert to pixel offset
+            text: loc.text,
+            options: loc.options, // Pass parsed options
+        }));
 
-        previewView.updateBundleOutput(bundled.code || '/* no output */', blockPositions, compiled.runtimeModules);
+        previewView.updateBundleOutput(bundled.code || '/* no output */', previewLocations, compiled.runtimeModules);
         
         const endTime = performance.now();
         const totalTime = endTime - startTime;

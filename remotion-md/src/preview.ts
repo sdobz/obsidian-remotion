@@ -1,107 +1,75 @@
 /**
- * Register a shot (component) to be previewed individually and included in the scene.
- *
- * @example
- * ```tsx
- * import { preview, scene } from 'remotion-md';
- * 
- * preview(<Title>Shot 1</Title>, 150)
- * preview(<Title>Shot 2</Title>, 90)
- * 
- * scene()  // Shows shots with their specified durations
- * ```
- *
- * @param component The JSX component/element to render as a shot.
- * @param durationInFrames Duration of this shot in frames (default: 150)
- * @returns A function component that renders the provided JSX.
+ * Player configuration options compatible with Remotion's Player component.
+ * All fields are optional and use sane defaults when not specified.
  */
-export function preview<T>(component: T, durationInFrames: number = 150): () => T {
-    const fn = () => component;
-    // Push to global tracking array (created by synthesis)
-    if (typeof globalThis !== 'undefined' && (globalThis as any).__previewScenes) {
-        (globalThis as any).__previewScenes.push(fn);
-    }
-    // Track shots with their durations for scene composition
-    if (typeof globalThis !== 'undefined' && (globalThis as any).__previewShots) {
-        (globalThis as any).__previewShots.push({ component: fn, duration: durationInFrames });
-    }
-    return fn;
+export interface PreviewPlayerOptions {
+    durationInFrames?: number;
+    fps?: number;
+    compositionWidth?: number;
+    compositionHeight?: number;
+    controls?: boolean;
+    loop?: boolean;
+    autoPlay?: boolean;
+    [key: string]: any;
 }
 
 /**
- * Create a composition showing all previously registered shots in sequence.
- * Uses Remotion's Sequence to concatenate all shots with their specified durations.
+ * Default player options used when not specified.
+ * These match typical Remotion defaults.
+ */
+export const PREVIEW_DEFAULTS: PreviewPlayerOptions = {
+    durationInFrames: 150,
+    fps: 30,
+    compositionWidth: 1280,
+    compositionHeight: 720,
+    controls: true,
+    loop: false,
+    autoPlay: false,
+};
+
+/**
+ * Render a component in the preview pane.
+ * Simple pass-through that lets you preview during development.
  *
  * @example
  * ```tsx
- * import { preview, scene } from 'remotion-md';
- * 
- * preview(<Title>Shot 1</Title>, 150)  // 5 seconds
- * preview(<Title>Shot 2</Title>, 90)   // 3 seconds
- * 
- * scene()  // Shows Shot 1 (5s) followed by Shot 2 (3s) = 8s total
+ * export const Title = () => <h1>My Title</h1>;
+ *
+ * // Preview with defaults
+ * preview(Title)
+ *
+ * // Preview with custom options
+ * preview(Title, { durationInFrames: 120, fps: 60 })
+ *
+ * export default (
+ *   <Composition
+ *     component={Title}
+ *     durationInFrames={120}
+ *     fps={30}
+ *   />
+ * )
  * ```
  *
- * @returns A function component that renders all shots in sequence with auto-scaled durations.
+ * @param component The component to preview
+ * @param options Player configuration options (optional)
+ * @returns The component unchanged
  */
-export function scene(): () => any {
-    const fn = () => {
-        // Get all shots registered up to this point
-        const shots = typeof globalThis !== 'undefined' && (globalThis as any).__previewShots 
-            ? [...(globalThis as any).__previewShots]
-            : [];
-        
-        // Import React and Remotion at runtime
-        const React = (globalThis as any).__REMOTION_DEPS__?.react;
-        const remotion = (globalThis as any).__REMOTION_DEPS__?.remotion;
-        
-        if (!React || !remotion) {
-            return React?.createElement('div', {}, 'Missing dependencies');
+export function preview<T>(component: T, options?: PreviewPlayerOptions): T {
+    // Track component for scenes structure
+    if (typeof globalThis !== 'undefined') {
+        if (!(globalThis as any).__previewComponents) {
+            (globalThis as any).__previewComponents = [];
+        }
+        if (!(globalThis as any).__previewOptions) {
+            (globalThis as any).__previewOptions = [];
         }
         
-        const { Sequence } = remotion;
-        
-        // Calculate cumulative frame positions
-        let currentFrame = 0;
-        const sequences = shots.map((shot: any, idx: number) => {
-            const Component = shot.component;
-            const duration = shot.duration || 150;
-            const from = currentFrame;
-            currentFrame += duration;
-            
-            return React.createElement(
-                Sequence,
-                { 
-                    key: idx,
-                    from: from,
-                    durationInFrames: duration
-                },
-                React.createElement(Component)
-            );
-        });
-        
-        return React.createElement(React.Fragment, null, ...sequences);
-    };
-    
-    // Push scene to tracking array
-    if (typeof globalThis !== 'undefined' && (globalThis as any).__previewScenes) {
-        (globalThis as any).__previewScenes.push(fn);
+        const index = (globalThis as any).__previewComponents.length;
+        (globalThis as any).__previewComponents[index] = component;
+        (globalThis as any).__previewOptions[index] = { ...PREVIEW_DEFAULTS, ...options };
     }
-    
-    // Reset shots for next scene
-    if (typeof globalThis !== 'undefined' && (globalThis as any).__previewShots) {
-        (globalThis as any).__previewShots = [];
-    }
-    
-    return fn;
-}
-
-// Type declaration for global tracking arrays
-declare global {
-    var __previewScenes: Array<() => any>;
-    var __previewShots: Array<() => any>;
+    return component;
 }
 
 export type PreviewExpression = ReturnType<typeof preview>;
-export type SceneExpression = ReturnType<typeof scene>;
 

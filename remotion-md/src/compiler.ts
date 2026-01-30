@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import { getRuntimeModules } from './moduleExtraction';
+import { extractPreviewCallLocations, PreviewCallLocation } from './previewLocations';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -7,6 +8,7 @@ export interface CompileResult {
     code: string;
     diagnostics: readonly ts.Diagnostic[];
     runtimeModules: Set<string>;
+    previewLocations: PreviewCallLocation[];
 }
 
 /**
@@ -47,6 +49,12 @@ export function compileVirtualModule(
         noLib: true,
         skipLibCheck: true,
         esModuleInterop: true,
+        // Enable strict type checking to catch undefined variables
+        strict: true,
+        noImplicitAny: true,
+        noImplicitThis: true,
+        strictNullChecks: true,
+        strictFunctionTypes: true,
         // Don't set baseUrl - let Node resolution walk up from file location
     };
 
@@ -141,6 +149,8 @@ export function compileVirtualModule(
 
     let output = '';
     const program = ts.createProgram([fileName], compilerOptions, host);
+    const sourceFile = program.getSourceFile(fileName);
+    const previewLocations = sourceFile ? extractPreviewCallLocations(sourceFile) : [];
     const diagnostics = ts.getPreEmitDiagnostics(program);
 
     program.emit(
@@ -153,5 +163,5 @@ export function compileVirtualModule(
         undefined
     );
 
-    return { code: output, diagnostics, runtimeModules };
+    return { code: output, diagnostics, runtimeModules, previewLocations };
 }

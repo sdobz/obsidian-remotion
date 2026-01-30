@@ -125,7 +125,7 @@ export class PreviewView extends ItemView {
         }
     }
 
-    public updateBundleOutput(code: string, blockPositions: Array<{sceneId: string, startLine: number, endLine: number, topOffset: number}>, runtimeModules?: Set<string>) {
+    public updateBundleOutput(code: string, previewLocations: Array<{line: number, column: number, topOffset: number, text: string, options?: Record<string, any>}>, runtimeModules?: Set<string>) {
         if (!this.iframe?.contentWindow) return;
         
         // Reload dependencies if new modules are required
@@ -136,7 +136,7 @@ export class PreviewView extends ItemView {
         this.iframe.contentWindow.postMessage({
             type: 'bundle-output',
             payload: code,
-            blockPositions,
+            previewLocations,
         }, '*');
     }
 

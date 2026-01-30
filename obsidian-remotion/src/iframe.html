@@ -61,7 +61,7 @@
         window.__REMOTION_DEPS__ = window.__REMOTION_DEPS__ || {};
         let __root = null;
 
-        function renderPlayers(sequence, blockPositions) {
+        function renderPlayers(sequence, previewLocations) {
             const deps = window.__REMOTION_DEPS__ || {};
             const React = deps.react;
             const PlayerModule = deps['@remotion/player'];
@@ -78,23 +78,42 @@
                 __root = createRoot(playersEl);
             }
 
+            // Default player options (must match PREVIEW_DEFAULTS in preview.ts)
+            const DEFAULT_OPTIONS = {
+                durationInFrames: 150,
+                fps: 30,
+                compositionWidth: 1280,
+                compositionHeight: 720,
+                controls: true,
+                loop: false,
+                autoPlay: false,
+            };
+
             const scenes = (sequence && sequence.scenes) || [];
             
-            // Initial positions from editor
+            // Use preview locations as position anchors
+            // Each preview() call in the source maps to a component to display
             const initialPositions = [];
             
             scenes.forEach((scene, idx) => {
-                const blockPos = blockPositions && blockPositions[idx];
-                const top = blockPos ? blockPos.topOffset : (idx * 500);
+                const loc = previewLocations && previewLocations[idx];
+                const top = loc ? loc.topOffset : (idx * 500);
                 initialPositions.push(top);
             });
 
             const nodes = scenes.map((scene, idx) => {
+                const loc = previewLocations && previewLocations[idx];
+                // Merge preview location options with defaults
+                const playerOptions = loc && loc.options
+                    ? { ...DEFAULT_OPTIONS, ...loc.options }
+                    : DEFAULT_OPTIONS;
+
                 return React.createElement(
                     'div',
                     { 
                         key: scene.id, 
                         'data-scene-id': scene.id,
+                        'data-preview-line': (loc && loc.line) || 0,
                         style: { 
                             top: initialPositions[idx] + 'px',
                         }
@@ -104,11 +123,13 @@
                         { className: 'player-wrapper' },
                         React.createElement(Player, {
                             component: scene.component,
-                            durationInFrames: 150,
-                            fps: 30,
-                            compositionWidth: 1280,
-                            compositionHeight: 720,
-                            controls: true,
+                            durationInFrames: playerOptions.durationInFrames,
+                            fps: playerOptions.fps,
+                            compositionWidth: playerOptions.compositionWidth,
+                            compositionHeight: playerOptions.compositionHeight,
+                            controls: playerOptions.controls,
+                            loop: playerOptions.loop,
+                            autoPlay: playerOptions.autoPlay,
                             acknowledgeRemotionLicense: true,
                             style: { width: '100%' },
                         })
@@ -149,18 +170,32 @@
             }, 100);
         }
 
-        function loadBundle(code, blockPositions) {
+        function loadBundle(code, previewLocations) {
             try {
                 window.RemotionBundle = undefined;
                 // eslint-disable-next-line no-eval
                 eval(code);
                 const mod = window.RemotionBundle;
-                const sequence = (mod && mod.default) || mod;
+                let sequence = (mod && mod.default) || mod;
                 
+                // If no explicit default export, build scenes from preview() calls
                 if (!sequence || !sequence.scenes) {
-                    throw new Error('Bundle did not export a default Sequence');
+                    const previewComponents = globalThis.__previewComponents || [];
+                    const previewOptions = globalThis.__previewOptions || [];
+                    
+                    if (previewComponents.length > 0) {
+                        const scenes = previewComponents.map((component, i) => ({
+                            id: '__scene_' + i,
+                            component: component,
+                            options: previewOptions[i] || {},
+                        }));
+                        sequence = { scenes };
+                    } else {
+                        throw new Error('Bundle did not export a default Sequence and no preview() calls found');
+                    }
                 }
-                renderPlayers(sequence, blockPositions);
+                
+                renderPlayers(sequence, previewLocations);
             } catch (err) {
                 const message = err && err.message ? err.message : String(err);
                 window.parent.postMessage({
@@ -178,7 +213,7 @@
             
             if (data.type === 'bundle-output') {
                 if (data.payload) {
-                    loadBundle(data.payload, data.blockPositions || []);
+                    loadBundle(data.payload, data.previewLocations || []);
                 }
             } else if (data.type === 'focus-scene') {
                 __currentFocusedScene = data.sceneId;
