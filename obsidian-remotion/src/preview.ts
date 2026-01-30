@@ -1,13 +1,8 @@
-import { ItemView, WorkspaceLeaf, MarkdownView } from "obsidian";
+import { ItemView, WorkspaceLeaf } from "obsidian";
 import iframeHtml from "./iframe.html";
-import { ScrollManager, ScrollDelegate, PixelBand } from "./scroll";
-import { getEditorView } from "./editor";
-import { StatusInfo } from "./ui";
-import { PreviewSpan } from "remotion-md";
+import type { ScrollManager, ScrollDelegate, PixelBand } from "./scroll";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
-
-type StatusCallback = (typecheck: StatusInfo, bundle: StatusInfo) => void;
 
 export interface PlayerStatus {
   height: number;
@@ -49,7 +44,6 @@ export type IframeCommand =
 
 export class PreviewView extends ItemView implements ScrollDelegate {
   private iframe: HTMLIFrameElement | null = null;
-  private statusCallback: StatusCallback | null = null;
   private scrollManager: ScrollManager | null = null;
   private handleMessage = (event: MessageEvent) => {
     const data = event.data as PreviewMessage | undefined;
@@ -62,16 +56,15 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     } else if (data.type === "player-status") {
       console.log("[Preview] Received player-status:", data.players);
       // Players have rendered, update their heights and replay positioning
-      this.ensureScrollManager()?.handlePlayerHeights(
+      this.scrollManager?.handlePlayerHeights(
         data.players.map((p) => p.height),
       );
     }
   };
 
-  constructor(leaf: WorkspaceLeaf, statusCallback: StatusCallback) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = "video";
-    this.statusCallback = statusCallback;
   }
 
   getViewType(): string {
@@ -102,9 +95,6 @@ export class PreviewView extends ItemView implements ScrollDelegate {
 
     this.iframe.addEventListener("load", () => {
       this.injectDependencies();
-      console.log("[Preview] Iframe loaded, deferring ScrollManager init");
-      // ScrollManager will be initialized lazily when first needed
-      this.ensureScrollManager();
     });
 
     window.addEventListener("message", this.handleMessage);
@@ -112,37 +102,13 @@ export class PreviewView extends ItemView implements ScrollDelegate {
 
   async onClose() {
     window.removeEventListener("message", this.handleMessage);
-    if (this.scrollManager) {
-      this.scrollManager.destroy();
-    }
+    // ScrollManager is managed by the main plugin, don't destroy it here
     this.iframe = null;
-    this.statusCallback = null;
     this.scrollManager = null;
   }
 
-  private ensureScrollManager(): ScrollManager | null {
-    // If ScrollManager already exists, we're good
-    if (this.scrollManager) return this.scrollManager;
-
-    // Try to initialize ScrollManager if we have an active markdown view and iframe
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!activeView || !this.iframe) return null;
-
-    const editorView = getEditorView(activeView);
-    const scrollDOM = editorView?.scrollDOM;
-    const container = activeView.leaf.view.containerEl;
-
-    if (!scrollDOM || !editorView) {
-      return null;
-    }
-    console.log("[Preview] Initializing ScrollManager");
-    this.scrollManager = new ScrollManager(
-      scrollDOM,
-      container,
-      editorView,
-      this,
-    );
-    return this.scrollManager;
+  public setScrollManager(scrollManager: ScrollManager | null): void {
+    this.scrollManager = scrollManager;
   }
 
   onReflow(iframeHeight: number, bands: PixelBand[]): void {
@@ -261,12 +227,11 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     console.log("[Preview] Bundle status:", status, error);
   }
 
-  public updateBundleOutput(
-    code: string,
-    previewLocations: PreviewSpan[],
-    runtimeModules?: Set<string>,
-  ) {
-    if (!this.iframe?.contentWindow) return;
+  public updateBundleOutput(code: string, runtimeModules?: Set<string>) {
+    if (!this.iframe?.contentWindow) {
+      console.warn("[Preview] Cannot update bundle output, iframe not ready");
+      return;
+    }
 
     // Reload dependencies if new modules are required
     if (runtimeModules && runtimeModules.size > 0) {
@@ -278,6 +243,5 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       payload: code,
     };
     this.iframe.contentWindow.postMessage(cmd, "*");
-    this.ensureScrollManager()?.handlePreviewSpans(previewLocations);
   }
 }

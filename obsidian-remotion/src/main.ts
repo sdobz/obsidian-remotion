@@ -6,7 +6,7 @@ import {
   getVaultRootPath,
   setupPluginDirectory,
 } from "./config";
-import { RemotionSettingTab, ViewManager, StatusBarManager } from "./ui";
+import { RemotionSettingTab, ViewManager } from "./ui";
 import {
   editorDiagnosticsExtension,
   applyEditorDiagnostics,
@@ -14,15 +14,15 @@ import {
   getEditorView,
 } from "./editor";
 import { CompilationManager } from "./compilation";
+import { ScrollManager } from "./scroll";
 
 export default class RemotionPlugin extends Plugin {
   public settings!: PluginSettings;
   private compilationManager!: CompilationManager;
+  private scrollManager: ScrollManager | null = null;
   private viewManager!: ViewManager;
-  private statusBarManager!: StatusBarManager;
 
   async onload() {
-    console.log("Loading Remotion Plugin");
     await this.loadSettings();
 
     this.viewManager = new ViewManager(this.app);
@@ -34,19 +34,15 @@ export default class RemotionPlugin extends Plugin {
     if (vaultRoot) {
       this.compilationManager = new CompilationManager(vaultRoot);
     }
-    this.statusBarManager = new StatusBarManager(() => this.addStatusBarItem());
 
     // Set plugin directory for runtime
     setupPluginDirectory(this.app, this.manifest);
 
     // Register the Remotion preview view
-    this.registerView(PREVIEW_VIEW_TYPE, (leaf: WorkspaceLeaf) => {
-      const view = new PreviewView(leaf, (typecheck, bundle) => {
-        this.statusBarManager.updateTypecheck(typecheck);
-        this.statusBarManager.updateBundle(bundle);
-      });
-      return view;
-    });
+    this.registerView(
+      PREVIEW_VIEW_TYPE,
+      (leaf: WorkspaceLeaf) => new PreviewView(leaf),
+    );
 
     // Add settings tab
     this.addSettingTab(new RemotionSettingTab(this.app, this));
@@ -66,11 +62,10 @@ export default class RemotionPlugin extends Plugin {
 
     // Open preview in right sidebar when workspace is ready
     this.app.workspace.onLayoutReady(() => {
-      this.activateView();
+      console.log("[Plugin] Workspace layout ready");
+      void this.viewManager.ensureSidebarTab();
+      this.onActiveLeafChange();
     });
-
-    // Initial check
-    this.onActiveLeafChange();
   }
 
   async loadSettings() {
@@ -82,20 +77,48 @@ export default class RemotionPlugin extends Plugin {
   }
 
   private async onActiveLeafChange() {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const activeView = this.viewManager.getActiveMarkdownView();
+    const previewView = this.viewManager.getVisiblePreviewView();
 
-    if (activeView) {
-      const previewView = this.viewManager.getPreviewView();
-      if (previewView) {
-        // Reset panel on note transition
-        previewView.resetForNewFile();
-      }
+    this.updateScrollManager(activeView, previewView);
+
+    if (activeView && previewView) {
+      previewView.resetForNewFile();
       this.schedulePreviewUpdate();
     }
   }
 
+  private updateScrollManager(
+    activeView: MarkdownView | null,
+    previewView: PreviewView | null,
+  ): void {
+    // Destroy old scroll manager if active view changed
+    if (this.scrollManager) {
+      this.scrollManager.destroy();
+      this.scrollManager = null;
+    }
+
+    if (!previewView || !activeView) return;
+
+    const editorView = getEditorView(activeView);
+    const scrollDOM = editorView?.scrollDOM;
+    const container = activeView.leaf.view.containerEl;
+
+    if (scrollDOM && editorView) {
+      console.log("[Plugin] Initializing ScrollManager");
+      this.scrollManager = new ScrollManager(
+        scrollDOM,
+        container,
+        editorView,
+        previewView,
+      );
+      previewView.setScrollManager(this.scrollManager);
+    }
+  }
+
   private schedulePreviewUpdate(): void {
-    if (!this.compilationManager) return;
+    if (!this.compilationManager || !this.viewManager.getVisiblePreviewView())
+      return;
 
     this.compilationManager.scheduleUpdate(async () => {
       await this.updatePreview();
@@ -103,8 +126,8 @@ export default class RemotionPlugin extends Plugin {
   }
 
   private async updatePreview(): Promise<void> {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    const previewView = this.viewManager.getPreviewView();
+    const activeView = this.viewManager.getActiveMarkdownView();
+    const previewView = this.viewManager.getVisiblePreviewView();
     if (!activeView || !previewView) return;
 
     previewView.updateTypeCheckStatus("loading");
@@ -141,39 +164,16 @@ export default class RemotionPlugin extends Plugin {
     }
 
     // Send bundle output with semantic locations - previewView will handle pixel conversion
-    previewView.updateBundleOutput(
-      result.bundleCode,
-      result.previewLocations,
-      result.runtimeModules,
-    );
-  }
-
-  async activateView() {
-    const { workspace } = this.app;
-
-    let leaf: WorkspaceLeaf | null = null;
-    const leaves = workspace.getLeavesOfType(PREVIEW_VIEW_TYPE);
-
-    if (leaves.length > 0) {
-      // A leaf with our view already exists, use that
-      leaf = leaves[0];
-    } else {
-      // Create a new leaf in the right sidebar
-      const rightLeaf = workspace.getRightLeaf(false);
-      if (rightLeaf) {
-        leaf = rightLeaf;
-        await leaf.setViewState({ type: PREVIEW_VIEW_TYPE, active: true });
-      }
-    }
-
-    // Reveal the leaf so it becomes the active tab in the right sidebar
-    if (leaf) {
-      workspace.revealLeaf(leaf);
-    }
+    previewView.updateBundleOutput(result.bundleCode, result.runtimeModules);
+    this.scrollManager?.handlePreviewSpans(result.previewLocations);
   }
 
   async onunload() {
     console.log("Unloading Remotion Plugin");
-    this.app.workspace.detachLeavesOfType(PREVIEW_VIEW_TYPE);
+    if (this.scrollManager) {
+      this.scrollManager.destroy();
+      this.scrollManager = null;
+    }
+    this.viewManager.detach();
   }
 }

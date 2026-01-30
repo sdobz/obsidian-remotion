@@ -1,5 +1,5 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
-import type { PreviewView } from "./preview";
+import { App, PluginSettingTab, Setting, MarkdownView } from "obsidian";
+import { PREVIEW_VIEW_TYPE, PreviewView } from "./preview";
 import type RemotionPlugin from "./main";
 
 /**
@@ -16,8 +16,6 @@ import type RemotionPlugin from "./main";
 // Type Definitions
 // ============================================================================
 
-export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
-
 export interface StatusInfo {
   status: string;
   errorCount?: number;
@@ -31,38 +29,51 @@ export interface StatusInfo {
 export class ViewManager {
   constructor(private app: App) {}
 
-  async toggle(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(PREVIEW_VIEW_TYPE)[0];
-
-    if (existing) {
-      this.app.workspace.detachLeavesOfType(PREVIEW_VIEW_TYPE);
-    } else {
-      await this.activate();
-    }
+  private isLeafVisible(
+    leaf: { view?: { containerEl?: HTMLElement } } | null,
+  ): boolean {
+    const el = leaf?.view?.containerEl;
+    if (!el) return false;
+    const anyEl = el as unknown as { isShown?: () => boolean };
+    if (typeof anyEl.isShown === "function") return anyEl.isShown();
+    return (
+      el.offsetParent !== null && el.clientHeight > 0 && el.clientWidth > 0
+    );
   }
 
-  async activate(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(PREVIEW_VIEW_TYPE)[0];
+  async ensureSidebarTab(): Promise<void> {
+    const leaves = this.app.workspace.getLeavesOfType(PREVIEW_VIEW_TYPE);
 
-    if (existing) {
-      this.app.workspace.revealLeaf(existing);
+    if (leaves.length > 0) {
+      // Tab already exists, do not reveal or activate it
       return;
     }
 
-    // Open in right sidebar
-    const leaf = this.app.workspace.getRightLeaf(false);
-    if (!leaf) return;
+    // Create a new leaf in the right sidebar without activating it
+    const rightLeaf = this.app.workspace.getRightLeaf(false);
+    if (!rightLeaf) return;
 
-    await leaf.setViewState({
-      type: PREVIEW_VIEW_TYPE,
-      active: false,
-    });
-    this.app.workspace.revealLeaf(leaf);
+    await rightLeaf.setViewState({ type: PREVIEW_VIEW_TYPE, active: false });
   }
 
-  getPreviewView(): PreviewView | null {
+  getVisiblePreviewView(): PreviewView | null {
     const leaf = this.app.workspace.getLeavesOfType(PREVIEW_VIEW_TYPE)[0];
-    return leaf?.view instanceof Object ? (leaf.view as PreviewView) : null;
+    const view = leaf?.view;
+    if (!(view instanceof PreviewView)) return null;
+    return this.isLeafVisible(leaf) ? view : null;
+  }
+
+  getActiveMarkdownView(): MarkdownView | null {
+    const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (active) return active;
+
+    const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
+    for (const leaf of markdownLeaves) {
+      const view = leaf.view;
+      if (view instanceof MarkdownView) return view;
+    }
+
+    return null;
   }
 
   detach(): void {

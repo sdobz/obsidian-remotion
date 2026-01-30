@@ -1,5 +1,5 @@
-import { EditorView } from "@codemirror/view";
-import { PreviewSpan } from "remotion-md";
+import type { EditorView } from "@codemirror/view";
+import type { PreviewSpan } from "remotion-md";
 
 export interface PixelBand {
   topOffset: number;
@@ -36,6 +36,7 @@ export class ScrollManager {
     private editorView: EditorView,
     private delegate: ScrollDelegate,
   ) {
+    console.log(this.scrollDOM);
     this.setupScrollListener();
     this.setupResizeObserver();
   }
@@ -82,8 +83,6 @@ export class ScrollManager {
    * Notify delegate of scroll position and player positions
    */
   private handleScroll(): void {
-    console.log(`[Scroll] Editor scrolled: scrollTop=${this.scrollTop}`);
-
     this.delegate.onScroll(
       this.scrollTop,
       this.calculatePlayerPositions(
@@ -97,10 +96,10 @@ export class ScrollManager {
    * Set up scroll event listener to notify viewport changes
    */
   private setupScrollListener(): void {
-    console.log("[Scroll] Setting up scroll listener");
     this.scrollListener = () => {
       this.handleScroll();
     };
+    this.handleScroll();
     this.scrollDOM.addEventListener("scroll", this.scrollListener);
   }
 
@@ -176,26 +175,28 @@ export class ScrollManager {
     const viewportCenter = this.container.clientHeight / 2;
 
     // Find the middle span closest to the viewport center
-    const middleIndex = bands.reduce((closestIndex, band, index) => {
-      const bandCenter = band.topOffset + band.height / 2;
-      const closestBandCenter =
-        bands[closestIndex].topOffset + bands[closestIndex].height / 2;
-      return Math.abs(bandCenter - viewportCenter) <
-        Math.abs(closestBandCenter - viewportCenter)
-        ? index
-        : closestIndex;
-    }, 0);
+    let middleIndex = 0;
+    if (bands.length > 0) {
+      let closestDistance = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < bands.length; i++) {
+        const band = bands[i];
+        const bandCenter = band.topOffset + band.height / 2;
+        const distance = Math.abs(bandCenter - viewportCenter);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          middleIndex = i;
+        }
+      }
+    }
 
-    // Slide the corresponding player to the middle span
-    const middleBand = bands[middleIndex];
     const newPositions: PixelBand[] = [];
 
     // Push players upward from the middle span
-    for (let i = middleIndex; i >= 0; i--) {
+    for (let i = Math.min(middleIndex, bands.length - 1); i >= 0; i--) {
       const band = bands[i];
       if (i === middleIndex) {
         newPositions.push({
-          topOffset: middleBand.topOffset,
+          topOffset: band.topOffset,
           height: playerHeights[i] ?? defaultHeight,
         });
       } else {
@@ -210,7 +211,6 @@ export class ScrollManager {
 
     // Push players downward from the middle span
     for (let i = middleIndex + 1; i < bands.length; i++) {
-      const band = bands[i];
       const previousBand = newPositions[newPositions.length - 1];
       const newOffset = previousBand.topOffset + (previousBand.height + 16); // 16 is the margin
       newPositions.push({

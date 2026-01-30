@@ -35,6 +35,9 @@ function require(id: string): unknown {
   throw new Error("Module not found: " + id);
 }
 
+// Expose require globally so esbuild's bundle can use it
+(window as any).require = require;
+
 (window as any).__REMOTION_DEPS__ = (window as any).__REMOTION_DEPS__ || {};
 let __root: any = null;
 
@@ -89,6 +92,8 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
     iframeHeight: cmd.iframeHeight,
     bandCount: cmd.bands.length,
   });
+  document.body.style.height = cmd.iframeHeight + "px";
+
   renderPreviewBands(cmd.bands);
 }
 
@@ -102,13 +107,6 @@ function handleBundle(cmd: IframeCommand & { type: "bundle" }) {
 function handleScroll(cmd: IframeCommand & { type: "scroll" }) {
   // Update scroll position and player positions
   if (typeof cmd.scrollTop === "number") {
-    console.log(
-      "[iframe] Scroll to",
-      cmd.scrollTop,
-      "with",
-      cmd.positions.length,
-      "positions",
-    );
     window.scrollTo({ top: cmd.scrollTop, behavior: "instant" });
   }
   // Position players
@@ -274,9 +272,7 @@ function renderPlayers(sequence: Sequence): void {
   }, 100);
 }
 
-function updateScrollHeight(height: number): void {
-  document.body.style.height = height + "px";
-}
+function updateScrollHeight(height: number): void {}
 
 function renderPreviewBands(previewLocations: PixelBand[]): void {
   const bandsContainer = document.getElementById("preview-bands");
