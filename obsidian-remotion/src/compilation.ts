@@ -167,7 +167,7 @@ export class CompilationManager {
     const previewLocations = this.mapPreviewLocationsToMarkdown(
       compiled.previewLocations,
       synthesized.code,
-      classified,
+      activeView.editor.getValue(),
     );
 
     // Log performance metrics
@@ -198,7 +198,7 @@ export class CompilationManager {
   private mapPreviewLocationsToMarkdown(
     locations: PreviewSpan[],
     synthCode: string,
-    blocks: ClassifiedBlock[],
+    markdownText: string,
   ): PreviewSpan[] {
     const synthLines = synthCode.split("\n");
     const blockLineMap: Array<{
@@ -229,14 +229,62 @@ export class CompilationManager {
       return current.markdownStartLine + (synthLine - current.synthStartLine);
     };
 
-    return locations.map((loc) => ({
-      line: mapSynthLineToMarkdownLine(loc.line),
-      column: loc.column,
-      text: loc.text,
-      options: loc.options,
-      pos: loc.pos,
-      length: loc.length,
-    }));
+    const buildLineStarts = (text: string): number[] => {
+      const starts = [0];
+      for (let i = 0; i < text.length; i++) {
+        if (text[i] === "\n") starts.push(i + 1);
+      }
+      return starts;
+    };
+
+    const getLineAndColumnFromPos = (
+      lineStarts: number[],
+      pos: number,
+    ): { line: number; column: number } => {
+      let low = 0;
+      let high = lineStarts.length - 1;
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const start = lineStarts[mid];
+        const next =
+          mid + 1 < lineStarts.length
+            ? lineStarts[mid + 1]
+            : Number.MAX_SAFE_INTEGER;
+        if (pos >= start && pos < next) {
+          return { line: mid + 1, column: pos - start };
+        }
+        if (pos < start) {
+          high = mid - 1;
+        } else {
+          low = mid + 1;
+        }
+      }
+      const last = lineStarts.length - 1;
+      return { line: last + 1, column: Math.max(0, pos - lineStarts[last]) };
+    };
+
+    const synthLineStarts = buildLineStarts(synthCode);
+    const mdLineStarts = buildLineStarts(markdownText);
+
+    return locations.map((loc) => {
+      const markdownLine = mapSynthLineToMarkdownLine(loc.line);
+      const startPos = (mdLineStarts[markdownLine - 1] ?? 0) + loc.column;
+      const synthEndPos = (loc.pos ?? 0) + (loc.length ?? 0);
+      const endLineCol = getLineAndColumnFromPos(synthLineStarts, synthEndPos);
+      const markdownEndLine = mapSynthLineToMarkdownLine(endLineCol.line);
+      const endPos =
+        (mdLineStarts[markdownEndLine - 1] ?? startPos) + endLineCol.column;
+      const length = Math.max(0, endPos - startPos);
+
+      return {
+        line: markdownLine,
+        column: loc.column,
+        text: loc.text,
+        options: loc.options,
+        pos: startPos,
+        length,
+      };
+    });
   }
 
   getLastExtractedBlocks(): ClassifiedBlock[] {

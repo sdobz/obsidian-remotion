@@ -1,22 +1,69 @@
 import { ItemView, WorkspaceLeaf, MarkdownView } from "obsidian";
 import iframeHtml from "./iframe.html";
-import { ScrollManager } from "./scroll";
+import {
+  ScrollManager,
+  ScrollDelegate,
+  ViewportState,
+  PixelBand,
+  PlayerPosition,
+} from "./scroll";
 import { getEditorView } from "./editor";
 import type { PreviewSpan } from "remotion-md";
+import { StatusInfo } from "./ui";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
 
-export class PreviewView extends ItemView {
+type StatusCallback = (typecheck: StatusInfo, bundle: StatusInfo) => void;
+
+/** Message received from iframe */
+export type PreviewMessage =
+  | {
+      type: "runtime-error";
+      error?: { message?: string; stack?: string };
+    }
+  | {
+      type: "status-update";
+      typecheck: StatusInfo;
+      bundle: StatusInfo;
+    }
+  | {
+      type: "players-rendered";
+    }
+  | {
+      type: "iframe-ready";
+    };
+
+/** Message sent to iframe */
+export type IframeCommand =
+  | {
+      type: "reset";
+    }
+  | {
+      type: "typecheck-status";
+      status: "loading" | "ok" | "error";
+      errorCount?: number;
+    }
+  | {
+      type: "bundle-status";
+      status: "loading" | "ok" | "error";
+      error?: string;
+    }
+  | {
+      type: "bundle-output";
+      payload: string;
+      previewLocations: Array<Record<string, unknown>>;
+    }
+  | {
+      type: "viewport-sync";
+      scrollTop: number;
+    };
+
+export class PreviewView extends ItemView implements ScrollDelegate {
   private iframe: HTMLIFrameElement | null = null;
-  private statusCallback: ((typecheck: any, bundle: any) => void) | null = null;
+  private statusCallback: StatusCallback | null = null;
   private scrollManager: ScrollManager | null = null;
   private handleMessage = (event: MessageEvent) => {
-    const data = event.data as {
-      type?: string;
-      error?: { message?: string; stack?: string };
-      typecheck?: { status: string; errorCount: number };
-      bundle?: { status: string; error: string | null };
-    };
+    const data = event.data as PreviewMessage | undefined;
     if (!data) return;
 
     if (data.type === "runtime-error") {
@@ -24,21 +71,20 @@ export class PreviewView extends ItemView {
       const stack = data.error?.stack ?? "";
       console.error("Remotion runtime error:", message, stack);
     } else if (data.type === "status-update") {
-      if (this.statusCallback) {
-        this.statusCallback(data.typecheck, data.bundle);
-      }
+      this.statusCallback?.(data.typecheck, data.bundle);
     } else if (data.type === "players-rendered") {
-      console.log("[ScrollSync] Received players-rendered message");
+      console.log("[Preview] Received players-rendered message");
       // Replay stored semantic locations when players are rendered
-      if (this.scrollManager) {
-        this.scrollManager.replayPreviewSpans();
+      if (this.ensureScrollManager()) {
+        this.scrollManager!.replayPreviewSpans();
       }
     }
   };
 
-  constructor(leaf: WorkspaceLeaf) {
+  constructor(leaf: WorkspaceLeaf, statusCallback: StatusCallback) {
     super(leaf);
     this.icon = "video";
+    this.statusCallback = statusCallback;
   }
 
   getViewType(): string {
@@ -53,6 +99,7 @@ export class PreviewView extends ItemView {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass("remotion-preview-container");
+    console.log("[Preview] Opening Remotion Preview View");
 
     // Create iframe for Remotion runtime
     this.iframe = container.createEl("iframe", {
@@ -68,22 +115,9 @@ export class PreviewView extends ItemView {
 
     this.iframe.addEventListener("load", () => {
       this.injectDependencies();
-      // Initialize ScrollManager after iframe loads
-      const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-      if (activeView && this.iframe) {
-        const editorView = getEditorView(activeView);
-        const scrollDOM = editorView?.scrollDOM;
-        const container = activeView.leaf.view.containerEl;
-
-        if (scrollDOM && editorView) {
-          this.scrollManager = new ScrollManager(
-            scrollDOM,
-            container,
-            this.iframe,
-            editorView,
-          );
-        }
-      }
+      console.log("[Preview] Iframe loaded, deferring ScrollManager init");
+      // ScrollManager will be initialized lazily when first needed
+      this.ensureScrollManager();
     });
 
     window.addEventListener("message", this.handleMessage);
@@ -99,8 +133,151 @@ export class PreviewView extends ItemView {
     this.scrollManager = null;
   }
 
-  public setStatusCallback(callback: (typecheck: any, bundle: any) => void) {
-    this.statusCallback = callback;
+  private ensureScrollManager(): boolean {
+    // If ScrollManager already exists, we're good
+    if (this.scrollManager) return true;
+
+    // Try to initialize ScrollManager if we have an active markdown view and iframe
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!activeView || !this.iframe) return false;
+
+    const editorView = getEditorView(activeView);
+    const scrollDOM = editorView?.scrollDOM;
+    const container = activeView.leaf.view.containerEl;
+
+    if (scrollDOM && editorView) {
+      console.log("[Preview] Initializing ScrollManager");
+      this.scrollManager = new ScrollManager(
+        scrollDOM,
+        container,
+        editorView,
+        this,
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * ScrollDelegate implementation: Handle viewport state changes from ScrollManager
+   */
+  onViewportSync(state: ViewportState): void {
+    if (!this.iframe?.contentWindow) return;
+
+    // Set iframe height to match viewport
+    this.iframe.style.height = `${state.iframeHeight}px`;
+
+    // Send viewport-sync message to iframe
+    const cmd: IframeCommand = {
+      type: "viewport-sync",
+      scrollTop: state.scrollTop,
+    };
+    this.iframe.contentWindow.postMessage(cmd, "*");
+  }
+
+  /**
+   * ScrollDelegate implementation: Handle preview bands update from ScrollManager
+   */
+  onPreviewBandsUpdate(bands: PixelBand[]): void {
+    if (!this.iframe?.contentWindow) return;
+    // Send preview bands as part of viewport update
+    console.log("[Preview] Preview bands updated:", bands.length);
+  }
+
+  /**
+   * ScrollDelegate implementation: Handle player positions update from ScrollManager
+   */
+  onPlayerPositionsUpdate(positions: PlayerPosition[]): void {
+    if (!this.iframe?.contentWindow) return;
+    const playersContainer =
+      this.iframe.contentWindow.document.getElementById("players");
+    if (!playersContainer) return;
+
+    const playerElements = Array.from(
+      playersContainer.children,
+    ) as HTMLElement[];
+
+    positions.forEach((pos) => {
+      const element = playerElements[pos.index];
+      if (element) {
+        element.style.position = "absolute";
+        element.style.top = `${Math.max(0, pos.actualOffset)}px`;
+        element.style.left = "0";
+        element.style.right = "0";
+      }
+    });
+
+    // Update container sizing
+    playersContainer.style.position = "relative";
+    const maxBottom = Math.max(
+      ...positions.map((p) => p.actualOffset + p.height),
+      0,
+    );
+    if (maxBottom > 0) {
+      playersContainer.style.minHeight = `${maxBottom + 20}px`;
+    }
+  }
+
+  /**
+   * Send viewport sync message to iframe (delegated from ScrollManager)
+   */
+  private sendViewportSync(
+    state: ReturnType<ScrollManager["getViewportState"]>,
+  ): void {
+    if (!this.iframe?.contentWindow) return;
+    const cmd: IframeCommand = {
+      type: "viewport-sync",
+      scrollTop: state.scrollTop,
+    };
+    this.iframe.contentWindow.postMessage(cmd, "*");
+  }
+
+  /**
+   * Update preview bands in iframe (delegated from ScrollManager)
+   */
+  private updatePreviewBands(
+    bands: Array<{ topOffset: number; height: number }>,
+  ): void {
+    if (!this.iframe?.contentWindow) return;
+    // Send preview bands as part of viewport update
+    console.log("[Preview] Preview bands updated:", bands.length);
+  }
+
+  /**
+   * Update player positions in iframe (delegated from ScrollManager)
+   */
+  private updatePlayerPositions(
+    positions: Array<{ index: number; actualOffset: number; height: number }>,
+  ): void {
+    if (!this.iframe?.contentWindow) return;
+    const playersContainer =
+      this.iframe.contentWindow.document.getElementById("players");
+    if (!playersContainer) return;
+
+    const playerElements = Array.from(
+      playersContainer.children,
+    ) as HTMLElement[];
+
+    positions.forEach((pos) => {
+      const element = playerElements[pos.index];
+      if (element) {
+        element.style.position = "absolute";
+        element.style.top = `${Math.max(0, pos.actualOffset)}px`;
+        element.style.left = "0";
+        element.style.right = "0";
+      }
+    });
+
+    // Update container sizing
+    playersContainer.style.position = "relative";
+    const maxBottom = Math.max(
+      ...positions.map((p) => p.actualOffset + p.height),
+      0,
+    );
+    if (maxBottom > 0) {
+      playersContainer.style.minHeight = `${maxBottom + 20}px`;
+    }
   }
 
   private injectDependencies(requiredModules?: Set<string>) {
@@ -174,7 +351,8 @@ export class PreviewView extends ItemView {
 
   public resetForNewFile() {
     if (!this.iframe?.contentWindow) return;
-    this.iframe.contentWindow.postMessage({ type: "reset" }, "*");
+    const cmd: IframeCommand = { type: "reset" };
+    this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
   public updateTypeCheckStatus(
@@ -182,14 +360,12 @@ export class PreviewView extends ItemView {
     errorCount?: number,
   ) {
     if (!this.iframe?.contentWindow) return;
-    this.iframe.contentWindow.postMessage(
-      {
-        type: "typecheck-status",
-        status,
-        errorCount,
-      },
-      "*",
-    );
+    const cmd: IframeCommand = {
+      type: "typecheck-status",
+      status,
+      errorCount,
+    };
+    this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
   public updateBundleStatus(
@@ -197,14 +373,12 @@ export class PreviewView extends ItemView {
     error?: string,
   ) {
     if (!this.iframe?.contentWindow) return;
-    this.iframe.contentWindow.postMessage(
-      {
-        type: "bundle-status",
-        status,
-        error,
-      },
-      "*",
-    );
+    const cmd: IframeCommand = {
+      type: "bundle-status",
+      status,
+      error,
+    };
+    this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
   public updateBundleOutput(
@@ -219,18 +393,16 @@ export class PreviewView extends ItemView {
       this.injectDependencies(runtimeModules);
     }
 
-    // Delegate to ScrollManager
-    if (this.scrollManager) {
-      this.scrollManager.handlePreviewSpans(previewLocations);
+    // Ensure ScrollManager is initialized before using it
+    if (this.ensureScrollManager()) {
+      this.scrollManager!.handlePreviewSpans(previewLocations);
     }
 
-    this.iframe.contentWindow.postMessage(
-      {
-        type: "bundle-output",
-        payload: code,
-        previewLocations: [],
-      },
-      "*",
-    );
+    const cmd: IframeCommand = {
+      type: "bundle-output",
+      payload: code,
+      previewLocations: [],
+    };
+    this.iframe.contentWindow.postMessage(cmd, "*");
   }
 }

@@ -10,6 +10,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "baseUrl": "./",
+    "allowJs": true,
     "paths": {
       "*": ["src/types/*"]
     },

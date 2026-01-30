@@ -1,16 +1,31 @@
-import type { Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { PreviewSpan } from "remotion-md";
 
-interface PixelBand {
+export interface PixelBand {
   topOffset: number;
   height: number;
 }
 
-interface PlayerPosition {
+export interface PlayerPosition {
   index: number;
   actualOffset: number;
   height: number;
+}
+
+export type ViewportState = {
+  scrollTop: number;
+  scrollOffset: number;
+  editorHeight: number;
+  iframeHeight: number;
+};
+
+/**
+ * Delegate interface for ScrollManager to communicate viewport, bands, and positions
+ */
+export interface ScrollDelegate {
+  onViewportSync(state: ViewportState): void;
+  onPreviewBandsUpdate(bands: PixelBand[]): void;
+  onPlayerPositionsUpdate(positions: PlayerPosition[]): void;
 }
 
 // ============================================================================
@@ -24,17 +39,15 @@ interface PlayerPosition {
 
 export class ScrollManager {
   private previewSpans: PreviewSpan[] = [];
-  private doc: Text | null = null;
   private scrollListener: (() => void) | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
   constructor(
     private scrollDOM: HTMLElement,
     private container: HTMLElement,
-    private iframe: HTMLIFrameElement,
     private editorView: EditorView,
+    private delegate: ScrollDelegate,
   ) {
-    this.doc = this.editorView?.state?.doc ?? null;
     this.setupScrollListener();
     this.setupResizeObserver();
   }
@@ -42,14 +55,13 @@ export class ScrollManager {
   /**
    * Get unified viewport state for iframe synchronization
    */
-  private getViewportState() {
+  getViewportState(): ViewportState {
     const scrollOffset = this.getScrollOffset();
     const scrollTop = this.scrollDOM.scrollTop || 0;
-    const iframeContentHeight =
-      this.iframe.contentWindow?.document.body?.scrollHeight || 0;
+    const containerHeight = this.container.clientHeight;
     const totalHeight = Math.max(
       this.scrollDOM.scrollHeight + scrollOffset,
-      iframeContentHeight,
+      containerHeight,
     );
 
     return {
@@ -61,42 +73,36 @@ export class ScrollManager {
   }
 
   /**
-   * Sync viewport state to iframe (scroll position and height)
+   * Notify viewport changes (height and scroll position)
    */
-  private syncViewport(): void {
-    if (!this.iframe.contentWindow) return;
-
+  private notifyViewportSync(): void {
     const state = this.getViewportState();
-    this.iframe.contentWindow.postMessage(
-      {
-        type: "viewport-sync",
-        scrollTop: state.scrollTop,
-        iframeHeight: state.iframeHeight,
-      },
-      "*",
-    );
+    this.delegate.onViewportSync(state);
 
-    this.iframe.style.height = `${state.iframeHeight}px`;
+    console.log(
+      `[ScrollSync] Viewport changed: scrollTop=${state.scrollTop}, iframeHeight=${state.iframeHeight}`,
+    );
   }
 
   /**
-   * Set up scroll event listener to sync viewport state with iframe
+   * Set up scroll event listener to notify viewport changes
    */
   private setupScrollListener(): void {
+    console.log("[Scroll] Setting up scroll listener");
     this.scrollListener = () => {
-      this.syncViewport();
+      this.notifyViewportSync();
     };
     this.scrollDOM.addEventListener("scroll", this.scrollListener);
   }
 
   /**
-   * Set up resize observer to resync viewport on window reflow
+   * Set up resize observer to notify viewport changes on window reflow
    */
   private setupResizeObserver(): void {
     if (typeof ResizeObserver === "undefined") return;
 
     this.resizeObserver = new ResizeObserver(() => {
-      this.syncViewport();
+      this.notifyViewportSync();
     });
 
     this.resizeObserver.observe(this.scrollDOM);
@@ -144,12 +150,13 @@ export class ScrollManager {
   }
 
   /**
-   * Pipeline: Convert semantic spans to pixel bands and position players
+   * Pipeline: Convert semantic spans to pixel bands and update positions
    * Single-pass processing without intermediate state
    */
   private updatePlayerBands(): void {
-    if (!this.editorView || !this.doc || this.previewSpans.length === 0) {
-      this.clearPlayerPositions();
+    if (!this.editorView || this.previewSpans.length === 0) {
+      this.delegate.onPreviewBandsUpdate([]);
+      this.delegate.onPlayerPositionsUpdate([]);
       return;
     }
 
@@ -157,19 +164,25 @@ export class ScrollManager {
     const bands = this.convertToBands(viewport);
 
     if (bands.length === 0) {
-      this.clearPlayerPositions();
+      this.delegate.onPreviewBandsUpdate([]);
+      this.delegate.onPlayerPositionsUpdate([]);
       return;
     }
 
     requestAnimationFrame(() => {
-      this.positionPlayers(bands);
-      this.syncViewport();
+      this.delegate.onPreviewBandsUpdate(bands);
+
+      // Calculate player positions
+      const positions = this.calculatePlayerPositions(bands);
+      this.delegate.onPlayerPositionsUpdate(positions);
+
+      this.notifyViewportSync();
     });
   }
 
   /**
    * Convert semantic spans to pixel bands using viewport state
-   * Pairs semantic and pixel data during single iteration
+   * Uses span.pos and span.length to calculate full span height
    */
   private convertToBands(
     viewport: ReturnType<typeof this.getViewportState>,
@@ -177,15 +190,16 @@ export class ScrollManager {
     return this.previewSpans
       .map((span) => {
         try {
-          const lineInfo = this.doc!.line(span.line);
-          const pos = lineInfo.from + Math.min(span.column, lineInfo.length);
-          const coords = this.editorView.coordsAtPos(pos);
+          const startCoords = this.editorView.coordsAtPos(span.pos);
+          const endCoords = this.editorView.coordsAtPos(
+            span.pos + (span.length || 0),
+          );
 
-          if (!coords) return null;
+          if (!startCoords || !endCoords) return null;
 
-          const height = Math.max(7, coords.bottom - coords.top);
+          const height = Math.max(7, endCoords.bottom - startCoords.top);
           const topOffset =
-            coords.top + viewport.scrollOffset + viewport.scrollTop;
+            startCoords.top + viewport.scrollOffset + viewport.scrollTop;
 
           return { topOffset, height };
         } catch {
@@ -196,21 +210,11 @@ export class ScrollManager {
   }
 
   /**
-   * Position players with collision detection, all in one pass
+   * Calculate player positions with collision detection
    */
-  private positionPlayers(bands: PixelBand[]): void {
-    const playersContainer =
-      this.iframe.contentWindow?.document.getElementById("players");
-    const playerElements = Array.from(
-      playersContainer?.children || [],
-    ) as HTMLElement[];
-
-    if (playerElements.length === 0) return;
-
-    // Get player heights
-    const playerHeights = playerElements.map(
-      (el) => el.getBoundingClientRect().height || 400,
-    );
+  private calculatePlayerPositions(bands: PixelBand[]): PlayerPosition[] {
+    // For now, use a default height; Preview will provide actual heights
+    const defaultHeight = 400;
 
     // Calculate priority-sorted positions by distance from viewport center
     const viewportCenter = window.innerHeight / 2;
@@ -218,7 +222,7 @@ export class ScrollManager {
       .map((band, index) => ({
         index,
         actualOffset: band.topOffset,
-        height: playerHeights[index] || 400,
+        height: defaultHeight,
         distanceFromCenter: Math.abs(band.topOffset - viewportCenter),
       }))
       .sort((a, b) => a.distanceFromCenter - b.distanceFromCenter)
@@ -237,25 +241,9 @@ export class ScrollManager {
         placed,
       );
       placed.push(pos);
-
-      const element = playerElements[pos.index];
-      if (element) {
-        element.style.position = "absolute";
-        element.style.top = `${Math.max(0, pos.actualOffset)}px`;
-        element.style.left = "0";
-        element.style.right = "0";
-      }
     }
 
-    // Update container sizing
-    playersContainer!.style.position = "relative";
-    const maxBottom = Math.max(
-      ...placed.map((p) => p.actualOffset + p.height),
-      0,
-    );
-    if (maxBottom > 0) {
-      playersContainer!.style.minHeight = `${maxBottom + 20}px`;
-    }
+    return placed;
   }
 
   /**
@@ -295,20 +283,5 @@ export class ScrollManager {
     }
 
     return offset;
-  }
-
-  /**
-   * Clear all player positions
-   */
-  private clearPlayerPositions(): void {
-    const playersContainer =
-      this.iframe.contentWindow?.document.getElementById("players");
-    if (playersContainer) {
-      playersContainer.style.minHeight = "0";
-      Array.from(playersContainer.children).forEach((child) => {
-        (child as HTMLElement).style.position = "static";
-        (child as HTMLElement).style.top = "";
-      });
-    }
   }
 }

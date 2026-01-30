@@ -1,5 +1,6 @@
 node_modules
 examples/.obsidian/plugins/hot-reload
+examples/.obsidian/plugins/obsidian-remotion/*
 examples/.obsidian/workspace.json
 examples/.obsidian/appearance.json
 .direnv

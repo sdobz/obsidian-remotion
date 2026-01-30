@@ -22,7 +22,10 @@ export default class RemotionPlugin extends Plugin {
   private statusBarManager!: StatusBarManager;
 
   async onload() {
+    console.log("Loading Remotion Plugin");
     await this.loadSettings();
+
+    this.viewManager = new ViewManager(this.app);
 
     this.registerEditorExtension(editorDiagnosticsExtension);
 
@@ -31,7 +34,6 @@ export default class RemotionPlugin extends Plugin {
     if (vaultRoot) {
       this.compilationManager = new CompilationManager(vaultRoot);
     }
-    this.viewManager = new ViewManager(this.app);
     this.statusBarManager = new StatusBarManager(() => this.addStatusBarItem());
 
     // Set plugin directory for runtime
@@ -39,16 +41,11 @@ export default class RemotionPlugin extends Plugin {
 
     // Register the Remotion preview view
     this.registerView(PREVIEW_VIEW_TYPE, (leaf: WorkspaceLeaf) => {
-      const view = new PreviewView(leaf);
-      view.setStatusCallback((typecheck, bundle) => {
+      const view = new PreviewView(leaf, (typecheck, bundle) => {
         this.statusBarManager.updateTypecheck(typecheck);
         this.statusBarManager.updateBundle(bundle);
       });
       return view;
-    });
-
-    this.addRibbonIcon("video", "Toggle Remotion Preview", async () => {
-      await this.viewManager.toggle();
     });
 
     // Add settings tab
@@ -67,6 +64,11 @@ export default class RemotionPlugin extends Plugin {
       ),
     );
 
+    // Open preview in right sidebar when workspace is ready
+    this.app.workspace.onLayoutReady(() => {
+      this.activateView();
+    });
+
     // Initial check
     this.onActiveLeafChange();
   }
@@ -83,20 +85,12 @@ export default class RemotionPlugin extends Plugin {
     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
 
     if (activeView) {
-      // Don't auto-activate preview panel on file switch
-      // User must manually open it via ribbon icon
       const previewView = this.viewManager.getPreviewView();
       if (previewView) {
         // Reset panel on note transition
         previewView.resetForNewFile();
       }
       this.schedulePreviewUpdate();
-    } else {
-      // Clear diagnostics when no markdown view is active
-      if (activeView) {
-        const cm = getEditorView(activeView);
-        if (cm) clearEditorDiagnostics(cm);
-      }
     }
   }
 
@@ -154,7 +148,32 @@ export default class RemotionPlugin extends Plugin {
     );
   }
 
+  async activateView() {
+    const { workspace } = this.app;
+
+    let leaf: WorkspaceLeaf | null = null;
+    const leaves = workspace.getLeavesOfType(PREVIEW_VIEW_TYPE);
+
+    if (leaves.length > 0) {
+      // A leaf with our view already exists, use that
+      leaf = leaves[0];
+    } else {
+      // Create a new leaf in the right sidebar
+      const rightLeaf = workspace.getRightLeaf(false);
+      if (rightLeaf) {
+        leaf = rightLeaf;
+        await leaf.setViewState({ type: PREVIEW_VIEW_TYPE, active: true });
+      }
+    }
+
+    // Reveal the leaf so it becomes the active tab in the right sidebar
+    if (leaf) {
+      workspace.revealLeaf(leaf);
+    }
+  }
+
   async onunload() {
+    console.log("Unloading Remotion Plugin");
     this.app.workspace.detachLeavesOfType(PREVIEW_VIEW_TYPE);
   }
 }

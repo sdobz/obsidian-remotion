@@ -1,14 +1,14 @@
 import ts from 'typescript';
 import { getRuntimeModules } from './moduleExtraction';
-import { extractPreviewCallLocations, PreviewCallLocation } from './previewLocations';
 import * as fs from 'fs';
 import * as path from 'path';
+import { extractPreviewCallLocations, PreviewSpan } from 'previewLocations';
 
 export interface CompileResult {
     code: string;
     diagnostics: readonly ts.Diagnostic[];
     runtimeModules: Set<string>;
-    previewLocations: PreviewCallLocation[];
+    previewLocations: PreviewSpan[];
 }
 
 /**
