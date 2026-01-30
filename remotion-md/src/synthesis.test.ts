@@ -16,8 +16,8 @@ preview(<Composition id="scene" component={Frame} durationInFrames={30} fps={30}
         const blocks = classifyBlocks(extractCodeBlocks(markdown));
         const result = synthesizeVirtualModule('Note.md', blocks);
 
-        expect(result.code).toContain('globalThis.__previewComponents = []');
-        expect(result.code).toContain('globalThis.__previewOptions = []');
+        expect(result.code).toContain('(globalThis as any).__previewComponents = []');
+        expect(result.code).toContain('(globalThis as any).__previewOptions = []');
         expect(result.code).toContain('import { Composition }');
         expect(result.code).toContain('preview(');
     });

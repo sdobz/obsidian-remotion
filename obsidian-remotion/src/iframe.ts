@@ -3,16 +3,8 @@
  * This runs inside the sandboxed iframe and manages player rendering, scroll sync, and error handling
  */
 
-import type { PreviewMessage, IframeCommand } from "./preview";
-import { StatusInfo } from "./ui";
-
-type PreviewLocation = {
-  topOffset?: number;
-  height?: number;
-  endOffset?: number;
-  options?: Record<string, unknown>;
-  line?: number;
-};
+import type { IframeCommand } from "./preview";
+import { PixelBand } from "./scroll";
 
 type Scene = {
   id: string;
@@ -25,13 +17,8 @@ type Sequence = {
 };
 
 // State management
-let typecheckState: StatusInfo = { status: "loading", errorCount: 0 };
-let bundleState: StatusInfo = {
-  status: "loading",
-  error: null,
-};
 let hasContent = false;
-let currentPreviewLocations: PreviewLocation[] = [];
+let positions: PixelBand[] = [];
 
 // Module registry for require polyfill
 const __modules__: Record<string, unknown> = {};
@@ -50,18 +37,6 @@ function require(id: string): unknown {
 
 (window as any).__REMOTION_DEPS__ = (window as any).__REMOTION_DEPS__ || {};
 let __root: any = null;
-
-function notifyStatusUpdate() {
-  // Send status to parent for Obsidian status bar
-  window.parent.postMessage(
-    {
-      type: "status-update",
-      typecheck: typecheckState,
-      bundle: bundleState,
-    },
-    "*",
-  );
-}
 
 function showLoadingScreen() {
   const loadingScreen = document.getElementById("loading-screen");
@@ -102,41 +77,64 @@ function resetPanel() {
   clearError();
 
   // Reset status
-  typecheckState = { status: "loading", errorCount: 0 };
-  bundleState = { status: "loading", error: null };
   hasContent = false;
 
   // Show loading screen
   showLoadingScreen();
 }
 
-function handleTypecheckStatus(
-  cmd: IframeCommand & { type: "typecheck-status" },
-) {
-  typecheckState.status = cmd.status;
-  typecheckState.errorCount = cmd.errorCount || 0;
-  notifyStatusUpdate();
-  // Update bands when typecheck status changes
-  renderPreviewBands(currentPreviewLocations);
+function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
+  // Update viewport dimensions and preview bands
+  console.log("[iframe] Reflow:", {
+    iframeHeight: cmd.iframeHeight,
+    bandCount: cmd.bands.length,
+  });
+  renderPreviewBands(cmd.bands);
 }
 
-function handleBundleStatus(cmd: IframeCommand & { type: "bundle-status" }) {
-  bundleState.status = cmd.status;
-  bundleState.error = cmd.error || null;
-  notifyStatusUpdate();
-}
-
-function handleBundleOutput(cmd: IframeCommand & { type: "bundle-output" }) {
+function handleBundle(cmd: IframeCommand & { type: "bundle" }) {
   if (cmd.payload) {
-    loadBundle(cmd.payload, cmd.previewLocations || []);
+    loadBundle(cmd.payload);
+    // After bundle loads, players should render and send back player-status
   }
 }
 
-function handleViewportSync(cmd: IframeCommand & { type: "viewport-sync" }) {
+function handleScroll(cmd: IframeCommand & { type: "scroll" }) {
+  // Update scroll position and player positions
   if (typeof cmd.scrollTop === "number") {
-    console.log("[iframe] Setting scrollTop to", cmd.scrollTop);
+    console.log(
+      "[iframe] Scroll to",
+      cmd.scrollTop,
+      "with",
+      cmd.positions.length,
+      "positions",
+    );
     window.scrollTo({ top: cmd.scrollTop, behavior: "instant" });
   }
+  // Position players
+  positionPlayers(cmd.positions);
+}
+
+/**
+ * Position player DOM elements according to calculated positions
+ */
+function positionPlayers(newPositions: PixelBand[]): void {
+  const playersContainer = document.getElementById("players");
+  if (!playersContainer) return;
+
+  const playerElements = Array.from(playersContainer.children) as HTMLElement[];
+  positions = newPositions;
+
+  positions.forEach((pos, index) => {
+    const element = playerElements[index];
+    if (element) {
+      element.style.position = "absolute";
+      element.style.top = `${Math.max(0, pos.topOffset)}px`;
+      element.style.left = "0";
+      element.style.right = "0";
+      // element.style.height = `${pos.height}px`;
+    }
+  });
 }
 
 function renderEmptyState(): void {
@@ -174,10 +172,7 @@ function renderEmptyState(): void {
     `;
 }
 
-function renderPlayers(
-  sequence: Sequence,
-  previewLocations: PreviewLocation[],
-): void {
+function renderPlayers(sequence: Sequence): void {
   const deps = (window as any).__REMOTION_DEPS__ || {};
   const React = deps.react;
   const PlayerModule = deps["@remotion/player"];
@@ -215,19 +210,17 @@ function renderPlayers(
   // Each preview() call in the source maps to a component to display
 
   const nodes = scenes.map((scene: Scene, idx: number) => {
-    const loc = previewLocations && previewLocations[idx];
-    // Merge preview location options with defaults
-    const playerOptions =
-      loc && loc.options
-        ? { ...DEFAULT_OPTIONS, ...loc.options }
-        : DEFAULT_OPTIONS;
+    const loc = positions[idx];
+    // Merge scene options with defaults
+    const playerOptions = scene.options
+      ? { ...DEFAULT_OPTIONS, ...scene.options }
+      : DEFAULT_OPTIONS;
 
     return React.createElement(
       "div",
       {
         key: scene.id,
         "data-scene-id": scene.id,
-        "data-preview-line": (loc && loc.line) || 0,
       },
       React.createElement(
         "div",
@@ -259,47 +252,33 @@ function renderPlayers(
     );
   }
 
-  updateScrollableHeight(previewLocations);
-
   console.log("[iframe] Players rendered, notifying parent in 100ms");
 
-  // Notify parent that players have been rendered for scroll sync
+  // Notify parent that players have been rendered with their dimensions
   setTimeout(() => {
-    console.log("[iframe] Sending players-rendered message");
-    window.parent.postMessage({ type: "players-rendered" }, "*");
+    console.log("[iframe] Sending player-status message");
+    const playersContainer = document.getElementById("players");
+    const playerElements = playersContainer
+      ? Array.from(playersContainer.children)
+      : [];
+
+    const playerStatuses = playerElements.map((el, index) => ({
+      index,
+      height: (el as HTMLElement).offsetHeight || 100,
+    }));
+
+    window.parent.postMessage(
+      { type: "player-status", players: playerStatuses },
+      "*",
+    );
   }, 100);
-
-  // Render preview bands if type checking passed
-  renderPreviewBands(previewLocations);
 }
 
-function updateScrollableHeight(previewLocations: PreviewLocation[]): void {
-  const playersEl = document.getElementById("players");
-  if (!playersEl) return;
-
-  let maxEnd = 0;
-  if (Array.isArray(previewLocations)) {
-    previewLocations.forEach((loc) => {
-      if (typeof loc.topOffset !== "number") return;
-      const height =
-        typeof loc.height === "number" && loc.height > 0 ? loc.height : 24;
-      const endOffset =
-        typeof loc.endOffset === "number"
-          ? loc.endOffset
-          : loc.topOffset + height;
-      if (endOffset > maxEnd) maxEnd = endOffset;
-    });
-  }
-
-  const padding = 48;
-  const minHeight = window.innerHeight || 0;
-  const targetHeight = Math.max(maxEnd + padding, minHeight);
-  playersEl.style.height = targetHeight + "px";
-  document.body.style.height = targetHeight + "px";
-  document.documentElement.style.height = targetHeight + "px";
+function updateScrollHeight(height: number): void {
+  document.body.style.height = height + "px";
 }
 
-function renderPreviewBands(previewLocations: PreviewLocation[]): void {
+function renderPreviewBands(previewLocations: PixelBand[]): void {
   const bandsContainer = document.getElementById("preview-bands");
   if (!bandsContainer) return;
 
@@ -308,7 +287,6 @@ function renderPreviewBands(previewLocations: PreviewLocation[]): void {
 
   // Only show bands if we have preview locations and types passed
   if (!previewLocations || previewLocations.length === 0) return;
-  if (typecheckState.status !== "ok") return;
 
   // Create a band for each preview() call
   previewLocations.forEach((loc) => {
@@ -317,19 +295,11 @@ function renderPreviewBands(previewLocations: PreviewLocation[]): void {
     const band = document.createElement("div");
     band.className = "preview-band";
 
-    // Calculate band height properly
-    const height =
-      typeof loc.height === "number" && loc.height > 0 ? loc.height : 24;
-    const endOffset = loc.endOffset || loc.topOffset + height;
-    const bandHeight = endOffset - loc.topOffset;
-
     band.style.top = loc.topOffset + "px";
-    band.style.height = bandHeight + "px";
+    band.style.height = loc.height + "px";
 
     bandsContainer.appendChild(band);
   });
-
-  updateScrollableHeight(previewLocations);
 }
 
 function renderError(errorMessage: string, errorStack: string): void {
@@ -385,10 +355,7 @@ function clearError(): void {
   }
 }
 
-function loadBundle(code: string, previewLocations: PreviewLocation[]): void {
-  // Store preview locations for band rendering
-  currentPreviewLocations = previewLocations || [];
-
+function loadBundle(code: string): void {
   try {
     (window as any).RemotionBundle = undefined;
     // eslint-disable-next-line no-eval
@@ -426,7 +393,7 @@ function loadBundle(code: string, previewLocations: PreviewLocation[]): void {
     // Success - clear any error overlay and render players
     clearError();
     hideLoadingScreen();
-    renderPlayers(sequence, previewLocations);
+    renderPlayers(sequence);
   } catch (err) {
     const message =
       err && (err as any).message ? (err as any).message : String(err);
@@ -454,14 +421,12 @@ window.addEventListener("message", (event: MessageEvent) => {
 
   if (data.type === "reset") {
     resetPanel();
-  } else if (data.type === "typecheck-status") {
-    handleTypecheckStatus(data as IframeCommand & { type: "typecheck-status" });
-  } else if (data.type === "bundle-status") {
-    handleBundleStatus(data as IframeCommand & { type: "bundle-status" });
-  } else if (data.type === "bundle-output") {
-    handleBundleOutput(data as IframeCommand & { type: "bundle-output" });
-  } else if (data.type === "viewport-sync") {
-    handleViewportSync(data as IframeCommand & { type: "viewport-sync" });
+  } else if (data.type === "reflow") {
+    handleReflow(data as IframeCommand & { type: "reflow" });
+  } else if (data.type === "bundle") {
+    handleBundle(data as IframeCommand & { type: "bundle" });
+  } else if (data.type === "scroll") {
+    handleScroll(data as IframeCommand & { type: "scroll" });
   }
 });
 

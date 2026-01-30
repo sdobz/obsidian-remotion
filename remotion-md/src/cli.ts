@@ -5,7 +5,7 @@ import * as ts from 'typescript';
 import { extractCodeBlocks, classifyBlocks } from './extraction';
 import { synthesizeVirtualModule } from './synthesis';
 import { compileVirtualModule } from './compiler';
-import { extractPreviewCallLocations, PreviewPlayerOptions } from './previewLocations';
+import { extractPreviewCallLocations } from './previewLocations';
 
 interface RenderConfig {
     compositionId?: string;
@@ -16,7 +16,7 @@ interface RenderConfig {
     durationInFrames?: number;
 }
 
-const PREVIEW_DEFAULTS: PreviewPlayerOptions = {
+const PREVIEW_DEFAULTS = {
     durationInFrames: 150,
     fps: 30,
     compositionWidth: 1280,
@@ -102,14 +102,6 @@ Examples:
     return { mdPath, config, remotionArgs };
 }
 
-function getPreviewConfig(previewLocations: ReturnType<typeof extractPreviewCallLocations>): PreviewPlayerOptions | null {
-    // Default to last preview if no specific composition requested
-    if (previewLocations.length === 0) return null;
-    
-    const lastPreview = previewLocations[previewLocations.length - 1];
-    return lastPreview.options || null;
-}
-
 async function main() {
     const { mdPath, config, remotionArgs } = parseCliArgs();
 
@@ -172,9 +164,8 @@ async function main() {
         process.exit(1);
     }
 
-    // Extract preview locations and get config from last preview
+    // Extract preview locations
     const previewLocations = compiled.previewLocations;
-    const previewConfig = getPreviewConfig(previewLocations);
     
     if (previewLocations.length === 0) {
         console.error('Error: No preview() calls found in compiled code');
@@ -185,13 +176,14 @@ async function main() {
     // Use last preview as default composition
     const defaultCompositionId = `preview-${previewLocations.length - 1}`;
     
+    // Config fallback to defaults (runtime options will override in composition)
     const finalConfig: Required<RenderConfig> = {
         compositionId: config.compositionId || defaultCompositionId,
         outputLocation: config.outputLocation || 'out.mp4',
-        width: config.width || previewConfig?.compositionWidth || PREVIEW_DEFAULTS.compositionWidth!,
-        height: config.height || previewConfig?.compositionHeight || PREVIEW_DEFAULTS.compositionHeight!,
-        fps: config.fps || previewConfig?.fps || PREVIEW_DEFAULTS.fps!,
-        durationInFrames: config.durationInFrames || previewConfig?.durationInFrames || PREVIEW_DEFAULTS.durationInFrames!,
+        width: config.width || PREVIEW_DEFAULTS.compositionWidth!,
+        height: config.height || PREVIEW_DEFAULTS.compositionHeight!,
+        fps: config.fps || PREVIEW_DEFAULTS.fps!,
+        durationInFrames: config.durationInFrames || PREVIEW_DEFAULTS.durationInFrames!,
     };
 
     // Write temporary composition file

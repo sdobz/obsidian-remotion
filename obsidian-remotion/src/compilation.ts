@@ -17,7 +17,6 @@ import fs from "fs";
 import type esbuild from "esbuild";
 
 export interface CompilationResult {
-  blocks: ClassifiedBlock[];
   previewLocations: PreviewSpan[];
   bundleCode: string;
   runtimeModules: Set<string>;
@@ -182,7 +181,6 @@ export class CompilationManager {
     );
 
     return {
-      blocks: classified,
       previewLocations,
       bundleCode: bundled.code || "/* Bundle failed - see diagnostics */",
       runtimeModules: compiled.runtimeModules,
@@ -280,7 +278,6 @@ export class CompilationManager {
         line: markdownLine,
         column: loc.column,
         text: loc.text,
-        options: loc.options,
         pos: startPos,
         length,
       };
