@@ -1,7 +1,8 @@
 import { ItemView, WorkspaceLeaf, MarkdownView } from "obsidian";
 import iframeHtml from "./iframe.html";
-import { ScrollManager, PreviewLocation } from "./ui";
+import { ScrollManager } from "./scroll";
 import { getEditorView } from "./editor";
+import type { PreviewSpan } from "remotion-md";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
 
@@ -25,6 +26,12 @@ export class PreviewView extends ItemView {
     } else if (data.type === "status-update") {
       if (this.statusCallback) {
         this.statusCallback(data.typecheck, data.bundle);
+      }
+    } else if (data.type === "players-rendered") {
+      console.log("[ScrollSync] Received players-rendered message");
+      // Replay stored semantic locations when players are rendered
+      if (this.scrollManager) {
+        this.scrollManager.replayPreviewSpans();
       }
     }
   };
@@ -64,8 +71,18 @@ export class PreviewView extends ItemView {
       // Initialize ScrollManager after iframe loads
       const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
       if (activeView && this.iframe) {
-        const scrollableArea = activeView.leaf.view.containerEl;
-        this.scrollManager = new ScrollManager(scrollableArea, this.iframe);
+        const editorView = getEditorView(activeView);
+        const scrollDOM = editorView?.scrollDOM;
+        const container = activeView.leaf.view.containerEl;
+
+        if (scrollDOM && editorView) {
+          this.scrollManager = new ScrollManager(
+            scrollDOM,
+            container,
+            this.iframe,
+            editorView,
+          );
+        }
       }
     });
 
@@ -74,6 +91,9 @@ export class PreviewView extends ItemView {
 
   async onClose() {
     window.removeEventListener("message", this.handleMessage);
+    if (this.scrollManager) {
+      this.scrollManager.destroy();
+    }
     this.iframe = null;
     this.statusCallback = null;
     this.scrollManager = null;
@@ -189,14 +209,7 @@ export class PreviewView extends ItemView {
 
   public updateBundleOutput(
     code: string,
-    previewLocations: Array<{
-      line: number;
-      column: number;
-      text: string;
-      options?: Record<string, any>;
-      pos?: number;
-      length?: number;
-    }>,
+    previewLocations: PreviewSpan[],
     runtimeModules?: Set<string>,
   ) {
     if (!this.iframe?.contentWindow) return;
@@ -206,71 +219,18 @@ export class PreviewView extends ItemView {
       this.injectDependencies(runtimeModules);
     }
 
-    // Convert semantic locations to pixel offsets
-    const pixelLocations = this.convertToPixelOffsets(previewLocations);
-
-    // Update scroll manager with pixel locations
+    // Delegate to ScrollManager
     if (this.scrollManager) {
-      this.scrollManager.handlePreviewLocations(pixelLocations);
+      this.scrollManager.handlePreviewSpans(previewLocations);
     }
 
     this.iframe.contentWindow.postMessage(
       {
         type: "bundle-output",
         payload: code,
-        previewLocations: pixelLocations,
+        previewLocations: [],
       },
       "*",
     );
-  }
-
-  private convertToPixelOffsets(
-    locations: Array<{
-      line: number;
-      column: number;
-      text: string;
-      options?: Record<string, any>;
-      pos?: number;
-      length?: number;
-    }>,
-  ): PreviewLocation[] {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!activeView)
-      return locations.map((loc) => ({ ...loc, topOffset: 0, height: 0 }));
-
-    const editorView = getEditorView(activeView);
-    const doc = editorView?.state?.doc;
-    if (!editorView || !doc) {
-      return locations.map((loc) => ({ ...loc, topOffset: 0, height: 0 }));
-    }
-
-    try {
-      const scrollDOM = editorView.scrollDOM;
-      const scrollRect = scrollDOM.getBoundingClientRect();
-      const scrollTop = scrollDOM.scrollTop || 0;
-      const scrollOffset =
-        activeView.leaf.view.containerEl.getBoundingClientRect().top -
-        scrollRect.top;
-
-      return locations.map((loc) => {
-        try {
-          const lineInfo = doc.line(loc.line);
-          const pos = lineInfo.from + Math.min(loc.column, lineInfo.length);
-          const coords = editorView.coordsAtPos(pos);
-
-          if (coords) {
-            const topOffset = coords.top + scrollOffset + scrollTop;
-            const height = Math.max(8, coords.bottom - coords.top);
-            return { ...loc, topOffset, height };
-          }
-        } catch (err) {
-          console.warn("[remotion] Failed to convert location to pixels:", err);
-        }
-        return { ...loc, topOffset: 0, height: 0 };
-      });
-    } catch (err) {
-      console.warn("[remotion] Failed to calculate pixel offsets:", err);
-      return locations.map((loc) => ({ ...loc, topOffset: 0, height: 0 }));
-    }
   }
 }

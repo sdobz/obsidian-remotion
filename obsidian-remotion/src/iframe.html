@@ -37,9 +37,12 @@
             padding: 12px;
             position: relative;
             z-index: 2;
+            min-height: 100vh;
         }
         #players > div {
-            margin-bottom: 16px;
+            position: absolute;
+            left: 12px;
+            right: 12px;
             padding: 8px;
             border-radius: 4px;
         }
@@ -256,11 +259,21 @@
                 );
             });
 
+            console.log('[iframe] Rendering', nodes.length, 'players');
+            
             if (__root) {
                 __root.render(React.createElement(React.Fragment, null, ...nodes));
             } else if (ReactDomClient.render) {
                 ReactDomClient.render(React.createElement(React.Fragment, null, ...nodes), playersEl);
             }
+            
+            console.log('[iframe] Players rendered, notifying parent in 100ms');
+            
+            // Notify parent that players have been rendered for scroll sync
+            setTimeout(() => {
+                console.log('[iframe] Sending players-rendered message');
+                window.parent.postMessage({ type: 'players-rendered' }, '*');
+            }, 100);
             
             // Render preview bands if type checking passed
             renderPreviewBands(previewLocations);
@@ -284,10 +297,13 @@
                 const band = document.createElement('div');
                 band.className = 'preview-band';
                 
+                // Calculate band height properly
                 const height = typeof loc.height === 'number' && loc.height > 0 ? loc.height : 24;
+                const endOffset = loc.endOffset || (loc.topOffset + height);
+                const bandHeight = endOffset - loc.topOffset;
                 
                 band.style.top = loc.topOffset + 'px';
-                band.style.height = height + 'px';
+                band.style.height = bandHeight + 'px';
                 
                 bandsContainer.appendChild(band);
             });
@@ -422,6 +438,12 @@
             } else if (data.type === 'bundle-output') {
                 if (data.payload) {
                     loadBundle(data.payload, data.previewLocations || []);
+                }
+            } else if (data.type === 'editor-scroll') {
+                // Sync iframe scroll with editor scroll
+                if (typeof data.scrollTop === 'number') {
+                    console.log('[iframe] Received editor-scroll message, scrolling to', data.scrollTop);
+                    window.scrollTo({ top: data.scrollTop, behavior: 'instant' });
                 }
             }
         });

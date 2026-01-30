@@ -9,6 +9,7 @@ import {
   type ClassifiedBlock,
   type MarkdownDiagnostic,
 } from "remotion-md";
+
 import { bundleVirtualModule } from "./bundler";
 import path from "path";
 import fs from "fs";
@@ -16,14 +17,7 @@ import type esbuild from "esbuild";
 
 export interface CompilationResult {
   blocks: ClassifiedBlock[];
-  previewLocations: Array<{
-    line: number;
-    column: number;
-    text: string;
-    options?: Record<string, any>;
-    pos?: number;
-    length?: number;
-  }>;
+  previewLocations: PreviewSpan[];
   bundleCode: string;
   runtimeModules: Set<string>;
   typecheckStatus: { status: "ok" | "error"; errorCount: number };
@@ -201,17 +195,10 @@ export class CompilationManager {
   }
 
   private mapPreviewLocationsToMarkdown(
-    locations: Array<{
-      line: number;
-      column: number;
-      text: string;
-      options?: Record<string, any>;
-      pos?: number;
-      length?: number;
-    }>,
+    locations: PreviewSpan[],
     synthCode: string,
     blocks: ClassifiedBlock[],
-  ): CompilationResult["previewLocations"] {
+  ): PreviewSpan[] {
     const synthLines = synthCode.split("\n");
     const blockLineMap: Array<{
       synthStartLine: number;

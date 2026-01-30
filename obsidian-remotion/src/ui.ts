@@ -1,4 +1,4 @@
-import { App, WorkspaceLeaf, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting } from "obsidian";
 import type { PreviewView } from "./preview";
 import type RemotionPlugin from "./main";
 
@@ -17,15 +17,6 @@ import type RemotionPlugin from "./main";
 // ============================================================================
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
-
-export interface PreviewLocation {
-  line: number;
-  column: number;
-  topOffset: number;
-  height?: number;
-  text: string;
-  options?: Record<string, any>;
-}
 
 export interface StatusInfo {
   status: string;
@@ -76,50 +67,6 @@ export class ViewManager {
 
   detach(): void {
     this.app.workspace.detachLeavesOfType(PREVIEW_VIEW_TYPE);
-  }
-}
-
-// ============================================================================
-// Scroll Management
-// ============================================================================
-
-export class ScrollManager {
-  constructor(
-    private scrollableArea: HTMLElement,
-    private iframe: HTMLIFrameElement,
-  ) {}
-
-  synchronizeHeight() {
-    const scrollableHeight = this.scrollableArea.getBoundingClientRect().height;
-    const iframeHeight =
-      this.iframe.contentWindow?.document.body.scrollHeight || 0;
-    const newHeight = Math.max(scrollableHeight, iframeHeight);
-    this.iframe.style.height = `${newHeight}px`;
-  }
-
-  handlePreviewLocations(locations: PreviewLocation[]) {
-    if (!Array.isArray(locations) || locations.length === 0) return;
-
-    // Extract offsets from preview locations for validation
-    const offsets = locations
-      .filter(
-        (loc): loc is PreviewLocation =>
-          typeof loc === "object" && typeof loc.topOffset === "number",
-      )
-      .map((loc) => loc.topOffset);
-
-    if (offsets.length > 0) {
-      // Update height after processing offsets
-      this.synchronizeHeight();
-    }
-  }
-
-  getScrollableArea(): HTMLElement {
-    return this.scrollableArea;
-  }
-
-  getIframe(): HTMLIFrameElement {
-    return this.iframe;
   }
 }
 
