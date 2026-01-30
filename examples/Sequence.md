@@ -27,17 +27,19 @@ const Title: React.FC<React.PropsWithChildren> = ({children}) => {
 		</div>
 	);
 };
+```
+
+
+
+```tsx
 
 const First= preview(
-	() => <Sequence durationInFrames={30}>
-	<Title>Hello Remotion</Title>
-	</Sequence>
+	() => <Title>Hello Remotion</Title>
 )
 
 const Second = preview(
 	() => <Title>Another Title</Title>
 )
-
 
 preview(() => <Series>
 	<Series.Sequence durationInFrames={30}>
@@ -46,5 +48,5 @@ preview(() => <Series>
 	<Series.Sequence durationInFrames={30}>
 		<Second />
 	</Series.Sequence>
-</Series>)
+</Series>, {durationInFrames: 60})
 ```
