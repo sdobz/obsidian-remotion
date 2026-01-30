@@ -8,6 +8,7 @@ import {
   parseBundleError,
   type ClassifiedBlock,
   type MarkdownDiagnostic,
+  PreviewSpan,
 } from "remotion-md";
 
 import { bundleVirtualModule } from "./bundler";

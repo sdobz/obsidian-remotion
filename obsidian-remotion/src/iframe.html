@@ -439,10 +439,9 @@
                 if (data.payload) {
                     loadBundle(data.payload, data.previewLocations || []);
                 }
-            } else if (data.type === 'editor-scroll') {
-                // Sync iframe scroll with editor scroll
+            } else if (data.type === 'viewport-sync') {
+                // Unified viewport synchronization: scroll position and height
                 if (typeof data.scrollTop === 'number') {
-                    console.log('[iframe] Received editor-scroll message, scrolling to', data.scrollTop);
                     window.scrollTo({ top: data.scrollTop, behavior: 'instant' });
                 }
             }
