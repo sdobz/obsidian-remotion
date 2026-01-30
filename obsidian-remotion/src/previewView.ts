@@ -5,14 +5,24 @@ export const PREVIEW_VIEW_TYPE = 'remotion-preview-view';
 
 export class PreviewView extends ItemView {
     private iframe: HTMLIFrameElement | null = null;
+    private statusCallback: ((typecheck: any, bundle: any) => void) | null = null;
     private handleMessage = (event: MessageEvent) => {
-        const data = event.data as { type?: string; error?: { message?: string; stack?: string } };
+        const data = event.data as { 
+            type?: string; 
+            error?: { message?: string; stack?: string };
+            typecheck?: { status: string; errorCount: number };
+            bundle?: { status: string; error: string | null };
+        };
         if (!data) return;
 
         if (data.type === 'runtime-error') {
             const message = data.error?.message ?? 'Unknown runtime error';
             const stack = data.error?.stack ?? '';
             console.error('Remotion runtime error:', message, stack);
+        } else if (data.type === 'status-update') {
+            if (this.statusCallback) {
+                this.statusCallback(data.typecheck, data.bundle);
+            }
         }
     };
 
@@ -56,6 +66,11 @@ export class PreviewView extends ItemView {
     async onClose() {
         window.removeEventListener('message', this.handleMessage);
         this.iframe = null;
+        this.statusCallback = null;
+    }
+
+    public setStatusCallback(callback: (typecheck: any, bundle: any) => void) {
+        this.statusCallback = callback;
     }
 
     private injectDependencies(requiredModules?: Set<string>) {
@@ -92,7 +107,7 @@ export class PreviewView extends ItemView {
                 const deps: any = {};
                 
                 // Always try to load core dependencies
-                const coreModules = ['react', 'remotion', 'react-dom', 'react-dom/client', '@remotion/player'];
+                const coreModules = ['react', 'react/jsx-runtime', 'remotion', 'react-dom', 'react-dom/client', '@remotion/player'];
                 
                 // Add any additional runtime modules if specified
                 if (requiredModules) {
@@ -117,6 +132,29 @@ export class PreviewView extends ItemView {
         } catch (e) {
             console.debug('Dependency injection failed:', e);
         }
+    }
+
+    public resetForNewFile() {
+        if (!this.iframe?.contentWindow) return;
+        this.iframe.contentWindow.postMessage({ type: 'reset' }, '*');
+    }
+
+    public updateTypeCheckStatus(status: 'loading' | 'ok' | 'error', errorCount?: number) {
+        if (!this.iframe?.contentWindow) return;
+        this.iframe.contentWindow.postMessage({
+            type: 'typecheck-status',
+            status,
+            errorCount,
+        }, '*');
+    }
+
+    public updateBundleStatus(status: 'loading' | 'ok' | 'error', error?: string) {
+        if (!this.iframe?.contentWindow) return;
+        this.iframe.contentWindow.postMessage({
+            type: 'bundle-status',
+            status,
+            error,
+        }, '*');
     }
 
     public updateBundleOutput(code: string, previewLocations: Array<{line: number, column: number, topOffset: number, text: string, options?: Record<string, any>}>, runtimeModules?: Set<string>) {

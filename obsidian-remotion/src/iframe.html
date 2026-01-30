@@ -37,11 +37,39 @@
         #players > div > .player-wrapper > * {
             width: 100%;
         }
+        #loading-screen {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #1a1a1a;
+            z-index: 5000;
+        }
+        #loading-screen.hidden {
+            display: none;
+        }
+        .loading-spinner {
+            font-size: 64px;
+            animation: spin 1.5s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
+    <div id="loading-screen">
+        <div class="loading-spinner">⏳</div>
+    </div>
     <div id="players"></div>
     <script>
+        // State management
+        let typecheckState = { status: 'loading', errorCount: 0 };
+        let bundleState = { status: 'loading', error: null };
+        let hasContent = false;
+
         // Module registry for require polyfill
         const __modules__ = {};
         
@@ -56,7 +84,70 @@
         window.__REMOTION_DEPS__ = window.__REMOTION_DEPS__ || {};
         let __root = null;
 
+        function notifyStatusUpdate() {
+            // Send status to parent for Obsidian status bar
+            window.parent.postMessage({
+                type: 'status-update',
+                typecheck: typecheckState,
+                bundle: bundleState,
+            }, '*');
+        }
+
+        function showLoadingScreen() {
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen) {
+                loadingScreen.classList.remove('hidden');
+            }
+            hasContent = false;
+        }
+
+        function hideLoadingScreen() {
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen) {
+                loadingScreen.classList.add('hidden');
+            }
+            hasContent = true;
+        }
+
+        function resetPanel() {
+            // Unmount React root before clearing
+            if (__root) {
+                try {
+                    __root.unmount();
+                } catch (e) {
+                    // Ignore unmount errors
+                }
+                __root = null;
+            }
+            
+            // Clear all state
+            const playersEl = document.getElementById('players');
+            if (playersEl) {
+                playersEl.innerHTML = '';
+            }
+            clearError();
+            
+            // Reset status
+            typecheckState = { status: 'loading', errorCount: 0 };
+            bundleState = { status: 'loading', error: null };
+            hasContent = false;
+            
+            // Show loading screen
+            showLoadingScreen();
+            updateStatusBar();
+        }
+
         function renderEmptyState() {
+            // Unmount React root before clearing
+            if (__root) {
+                try {
+                    __root.unmount();
+                } catch (e) {
+                    // Ignore unmount errors
+                }
+                __root = null;
+            }
+            
             const playersEl = document.getElementById('players');
             if (!playersEl) return;
 
@@ -75,7 +166,7 @@
                         <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No Previews</div>
                         <div style="font-size: 14px; line-height: 1.5; max-width: 400px;">
                             Add a TypeScript/TSX code block with a <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">preview()</code> call to see Remotion content here.
-                        </div>
+            notifyStatusUpdateiv>
                     </div>
                 </div>
             `;
@@ -190,6 +281,59 @@
             }, 100);
         }
 
+        function renderError(errorMessage, errorStack) {
+            // Show error overlay without clearing existing players
+            const playersEl = document.getElementById('players');
+            if (!playersEl) return;
+
+            // Remove any existing error overlay first
+            const existingOverlay = document.getElementById('error-overlay');
+            if (existingOverlay) {
+                existingOverlay.remove();
+            }
+
+            // Create error overlay that sits on top of existing content
+            const overlay = document.createElement('div');
+            overlay.id = 'error-overlay';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 40px;
+                z-index: 10000;
+            `;
+            
+            overlay.innerHTML = `
+                <div style="
+                    background: rgba(255, 50, 50, 0.1);
+                    border: 1px solid rgba(255, 50, 50, 0.3);
+                    border-radius: 8px;
+                    padding: 24px;
+                    max-width: 600px;
+                    width: 100%;
+                ">
+                    <div style="font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #ff6b6b;">⚠️ Runtime Error</div>
+                    <div style="font-size: 14px; line-height: 1.5; color: #ffcccc; margin-bottom: 12px;">${errorMessage}</div>
+                    ${errorStack ? `<details style="margin-top: 12px;"><summary style="cursor: pointer; color: #ffaaaa; font-size: 12px;">Stack Trace</summary><pre style="font-size: 11px; overflow: auto; margin-top: 8px; color: #ffcccc;">${errorStack}</pre></details>` : ''}
+                </div>
+            `;
+            
+            document.body.appendChild(overlay);
+        }
+
+        function clearError() {
+            const existingOverlay = document.getElementById('error-overlay');
+            if (existingOverlay) {
+                existingOverlay.remove();
+            }
+        }
+
         function loadBundle(code, previewLocations) {
             try {
                 window.RemotionBundle = undefined;
@@ -211,18 +355,35 @@
                         }));
                         sequence = { scenes };
                     } else {
-                        // No previews - show empty state
+                        // No previews - show empty state (clear content first)
+                        const playersEl = document.getElementById('players');
+                        if (playersEl) {
+                            playersEl.innerHTML = '';
+                        }
                         renderEmptyState();
+                        clearError();
+                        hideLoadingScreen();
                         return;
                     }
                 }
                 
+                // Success - clear any error overlay and render players
+                clearError();
+                hideLoadingScreen();
                 renderPlayers(sequence, previewLocations);
             } catch (err) {
                 const message = err && err.message ? err.message : String(err);
+                const stack = err && err.stack ? err.stack : '';
+                // Show error overlay but keep existing players (or loading screen if no content yet)
+                if (hasContent) {
+                    renderError(message, stack);
+                } else {
+                    hideLoadingScreen();
+                    renderError(message, stack);
+                }
                 window.parent.postMessage({
                     type: 'runtime-error',
-                    error: { message, stack: err && err.stack ? err.stack : '' }
+                    error: { message, stack }
                 }, '*');
             }
         }
@@ -231,7 +392,17 @@
             const data = event.data;
             if (!data) return;
             
-            if (data.type === 'bundle-output') {
+            if (data.type === 'reset') {
+                resetPanel();
+            } else if (data.type === 'typecheck-status') {
+                typecheckState.status = data.status;
+                typecheckState.errorCount = data.errorCount || 0;
+                notifyStatusUpdate();
+            } else if (data.type === 'bundle-status') {
+                bundleState.status = data.status;
+                bundleState.error = data.error || null;
+                notifyStatusUpdate();
+            } else if (data.type === 'bundle-output') {
                 if (data.payload) {
                     loadBundle(data.payload, data.previewLocations || []);
                 }

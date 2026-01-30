@@ -35,5 +35,5 @@ preview(
 ```
 
 ```bash
-npx remotion-md Render.md --out
+npx remotion-md Render.md --out Render.md.mp4
 ```

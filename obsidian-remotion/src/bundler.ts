@@ -96,6 +96,7 @@ export async function bundleVirtualModule(
         'obsidian',
         'electron',
         'react',
+        'react/jsx-runtime',
         'react-dom',
         'react-dom/client',
         'remotion',

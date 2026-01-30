@@ -86,12 +86,14 @@ export class CompilationManager {
         const nodeModulesPaths = this.findNodeModulesPaths(path.dirname(absoluteNotePath), this.vaultRoot);
         
         // TypeScript compilation - wrapped in try-catch for resilience
+        previewView.updateTypeCheckStatus('loading');
         const tsStart = performance.now();
         let compiled: ReturnType<typeof compileVirtualModule>;
         try {
             compiled = compileVirtualModule(virtualFileName, synthesized.code, nodeModulesPaths);
         } catch (err) {
             console.error('[remotion] TypeScript compilation failed:', err);
+            previewView.updateTypeCheckStatus('error', 1);
             // Show error but keep previous render
             return null;
         }
@@ -104,10 +106,13 @@ export class CompilationManager {
             synthesized.sceneExports
         );
 
+        const errorCount = markdownDiagnostics.filter(d => d.category === 'error').length;
+        previewView.updateTypeCheckStatus(errorCount > 0 ? 'error' : 'ok', errorCount);
         
         if (version !== this.updateVersion) return null;
         
         // Bundling - wrapped in try-catch for resilience
+        previewView.updateBundleStatus('loading');
         const bundleStart = performance.now();
         let bundled: Awaited<ReturnType<typeof bundleVirtualModule>>;
         try {
@@ -119,6 +124,8 @@ export class CompilationManager {
             );
         } catch (err) {
             console.error('[remotion] Bundle failed:', err);
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            previewView.updateBundleStatus('error', errorMsg);
             // Return fallback result with error message
             bundled = { code: '/* Bundle failed - see console */', error: err as Error };
         }
@@ -132,6 +139,8 @@ export class CompilationManager {
             if (bundleError) {
                 markdownDiagnostics = [...markdownDiagnostics, bundleError];
             }
+        } else {
+            previewView.updateBundleStatus('ok');
         }
 
         // Apply diagnostics to editor

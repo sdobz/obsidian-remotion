@@ -13,6 +13,8 @@ export default class RemotionPlugin extends Plugin {
     private compilationManager!: CompilationManager;
     private scrollSync!: ScrollSync;
     private viewManager!: ViewManager;
+    private typecheckStatusBarItem: HTMLElement | null = null;
+    private bundleStatusBarItem: HTMLElement | null = null;
 
     private handleIframeMessage = (event: MessageEvent) => {
         const data = event.data as { type?: string; sceneId?: string; scrollTop?: number };
@@ -42,8 +44,21 @@ export default class RemotionPlugin extends Plugin {
         // Set plugin directory for runtime
         this.setupPluginDirectory(vaultRoot);
 
+        // Create status bar items
+        this.typecheckStatusBarItem = this.addStatusBarItem();
+        this.typecheckStatusBarItem.setText('📝 Types');
+        
+        this.bundleStatusBarItem = this.addStatusBarItem();
+        this.bundleStatusBarItem.setText('📦 Bundle');
+
         // Register the Remotion preview view
-        this.registerView(PREVIEW_VIEW_TYPE, (leaf: WorkspaceLeaf) => new PreviewView(leaf));
+        this.registerView(PREVIEW_VIEW_TYPE, (leaf: WorkspaceLeaf) => {
+            const view = new PreviewView(leaf);
+            view.setStatusCallback((typecheck, bundle) => {
+                this.updateStatusBarItems(typecheck, bundle);
+            });
+            return view;
+        });
 
         this.addRibbonIcon('video', 'Toggle Remotion Preview', async () => {
             await this.viewManager.toggle();
@@ -92,7 +107,13 @@ export default class RemotionPlugin extends Plugin {
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
         
         if (activeView) {
-            await this.viewManager.activate();
+            // Don't auto-activate preview panel on file switch
+            // User must manually open it via ribbon icon
+            const previewView = this.viewManager.getPreviewView();
+            if (previewView) {
+                // Reset panel on note transition
+                previewView.resetForNewFile();
+            }
             this.schedulePreviewUpdate();
             this.scrollSync.attach(activeView, () => this.syncScroll());
         } else {
@@ -189,5 +210,55 @@ export default class RemotionPlugin extends Plugin {
         window.removeEventListener('message', this.handleIframeMessage);
         this.scrollSync.detach();
         this.app.workspace.detachLeavesOfType(PREVIEW_VIEW_TYPE);
+        this.typecheckStatusBarItem = null;
+        this.bundleStatusBarItem = null;
+    }
+
+    private updateStatusBarItems(
+        typecheck?: { status: string; errorCount: number },
+        bundle?: { status: string; error: string | null }
+    ) {
+        if (typecheck && this.typecheckStatusBarItem) {
+            let icon = '📝';
+            let text = 'Types';
+            let color = '';
+            
+            if (typecheck.status === 'loading') {
+                icon = '⏳';
+                text = 'Types...';
+            } else if (typecheck.status === 'ok') {
+                icon = '✓';
+                color = 'color: var(--text-success);';
+            } else {
+                icon = '✗';
+                color = 'color: var(--text-error);';
+                if (typecheck.errorCount > 0) {
+                    text = `Types (${typecheck.errorCount})`;
+                }
+            }
+            
+            this.typecheckStatusBarItem.setText(`${icon} ${text}`);
+            this.typecheckStatusBarItem.style.cssText = color;
+        }
+
+        if (bundle && this.bundleStatusBarItem) {
+            let icon = '📦';
+            let text = 'Bundle';
+            let color = '';
+            
+            if (bundle.status === 'loading') {
+                icon = '⏳';
+                text = 'Bundle...';
+            } else if (bundle.status === 'ok') {
+                icon = '✓';
+                color = 'color: var(--text-success);';
+            } else {
+                icon = '✗';
+                color = 'color: var(--text-error);';
+            }
+            
+            this.bundleStatusBarItem.setText(`${icon} ${text}`);
+            this.bundleStatusBarItem.style.cssText = color;
+        }
     }
 }
