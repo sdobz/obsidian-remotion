@@ -27,11 +27,13 @@ export function getResolutionDirectory(nodeModulesPaths: string[], fallback: str
  * @param fileName Virtual file name (e.g., /virtual/path.tsx)
  * @param sourceText Source code to compile
  * @param nodeModulesPaths Paths to search for node_modules
+ * @param options Compilation options
  */
 export function compileVirtualModule(
     fileName: string,
     sourceText: string,
-    nodeModulesPaths: string[] = []
+    nodeModulesPaths: string[] = [],
+    options: { includeLib?: boolean } = {}
 ): CompileResult {
     // Extract runtime modules from the code
     const runtimeModules = getRuntimeModules(sourceText);
@@ -46,7 +48,7 @@ export function compileVirtualModule(
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.NodeJs,
         noEmitOnError: false,
-        noLib: true,
+        noLib: !options.includeLib, // Allow lib types for CLI usage
         skipLibCheck: true,
         esModuleInterop: true,
         // Enable strict type checking to catch undefined variables
@@ -78,7 +80,11 @@ export function compileVirtualModule(
             }
             return undefined;
         },
-        getDefaultLibFileName: () => 'lib.d.ts',
+        getDefaultLibFileName: (options) => {
+            if (options.noLib) return 'lib.d.ts';
+            // Use TypeScript's built-in getDefaultLibFilePath to get proper lib files
+            return ts.getDefaultLibFilePath(options);
+        },
         writeFile: () => {},
         getCurrentDirectory: () => {
             // Return the real directory (not virtual path)

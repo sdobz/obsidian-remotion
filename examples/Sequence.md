@@ -41,7 +41,7 @@ const Second = preview(
 	() => <Title>Another Title</Title>
 )
 
-preview(() => <Series>
+export default preview(() => <Series>
 	<Series.Sequence durationInFrames={30}>
 		<First />
 	</Series.Sequence>

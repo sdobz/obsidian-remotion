@@ -21,8 +21,6 @@
     packages = {
     };
 
-    defaultPackage = packages.pythonEnv; # If you want to juist build the environment
-    #devShell = packages.pythonEnv.env; # We need .env in order to use `nix develop`
     devShell = pkgs.mkShell {
       buildInputs = [
         # GUI/editor/runtime

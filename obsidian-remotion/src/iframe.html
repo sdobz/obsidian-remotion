@@ -56,6 +56,31 @@
         window.__REMOTION_DEPS__ = window.__REMOTION_DEPS__ || {};
         let __root = null;
 
+        function renderEmptyState() {
+            const playersEl = document.getElementById('players');
+            if (!playersEl) return;
+
+            playersEl.innerHTML = `
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                    padding: 40px;
+                    text-align: center;
+                    color: #888;
+                ">
+                    <div>
+                        <div style="font-size: 48px; margin-bottom: 16px;">📹</div>
+                        <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No Previews</div>
+                        <div style="font-size: 14px; line-height: 1.5; max-width: 400px;">
+                            Add a TypeScript/TSX code block with a <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">preview()</code> call to see Remotion content here.
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         function renderPlayers(sequence, previewLocations) {
             const deps = window.__REMOTION_DEPS__ || {};
             const React = deps.react;
@@ -186,7 +211,9 @@
                         }));
                         sequence = { scenes };
                     } else {
-                        throw new Error('Bundle did not export a default Sequence and no preview() calls found');
+                        // No previews - show empty state
+                        renderEmptyState();
+                        return;
                     }
                 }
                 

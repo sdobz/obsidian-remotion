@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ESNext",
+    "module": "CommonJS",
     "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
@@ -13,7 +13,9 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "lib": ["ESNext"]
+    "lib": ["ESNext"],
+    "resolveJsonModule": true
   },
   "include": ["src/**/*"],
-  "exclude": ["**/*.test.ts", "dist"]}
+  "exclude": ["**/*.test.ts", "dist"]
+}

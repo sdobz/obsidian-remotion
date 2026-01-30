@@ -27,8 +27,8 @@ export function synthesizeVirtualModule(
     const moduleParts: string[] = [];
 
     // Initialize global tracking for preview() function calls and options
-    moduleParts.push('globalThis.__previewComponents = [];');
-    moduleParts.push('globalThis.__previewOptions = [];');
+    moduleParts.push('(globalThis as any).__previewComponents = [];');
+    moduleParts.push('(globalThis as any).__previewOptions = [];');
 
     const makeSentinel = (block: ClassifiedBlock) => {
         const line = block.startLine + 1; // 1-based line number in markdown
