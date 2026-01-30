@@ -3,6 +3,7 @@ import type esbuild from 'esbuild';
 
 export interface BundleResult {
     code: string;
+    error?: Error;
 }
 
 function loadEsbuild(nodeModulesPaths: string[]) {
@@ -28,7 +29,8 @@ function loadEsbuild(nodeModulesPaths: string[]) {
 export async function bundleVirtualModule(
     entryCode: string,
     entryName: string,
-    nodeModulesPaths: string[]
+    nodeModulesPaths: string[],
+    runtimeModules?: Set<string>
 ): Promise<BundleResult> {
     const esbuild = loadEsbuild(nodeModulesPaths);
 
@@ -59,6 +61,28 @@ export async function bundleVirtualModule(
         },
     };
 
+    // Build external list: always include node internals + esbuild's own modules
+    // Add runtime modules to external so they're resolved at runtime
+    const externalModules = [
+        'fs',
+        'path',
+        'obsidian',
+        'esbuild',
+        'react',
+        'react-dom',
+        'react-dom/client',
+        'remotion',
+        '@remotion/player',
+    ];
+
+    if (runtimeModules) {
+        for (const mod of runtimeModules) {
+            if (!externalModules.includes(mod)) {
+                externalModules.push(mod);
+            }
+        }
+    }
+
     try {
         const result = await esbuild.build({
             stdin: {
@@ -72,17 +96,7 @@ module.exports = sequence;
             format: 'iife',
             write: false,
             logLevel: 'error',
-            external: [
-                'fs',
-                'path',
-                'obsidian',
-                'esbuild',
-                'react',
-                'react-dom',
-                'react-dom/client',
-                'remotion',
-                '@remotion/player',
-            ],
+            external: externalModules,
             plugins: [virtualModulePlugin],
             nodePaths: nodeModulesPaths.length > 0 ? nodeModulesPaths : undefined,
         });
@@ -101,7 +115,8 @@ module.exports = sequence;
 
         return { code: '' };
     } catch (err) {
-        console.error('[bundler] esbuild error:', err);
-        throw err;
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error('[bundler] esbuild error:', error);
+        return { code: '', error };
     }
 }

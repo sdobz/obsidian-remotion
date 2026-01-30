@@ -3,7 +3,6 @@
 import React from 'react';
 import { useCurrentFrame, interpolate } from 'remotion';
 
-
 const Title: React.FC = () => {
 	const frame = useCurrentFrame();
 	const opacity = interpolate(frame, [0, 30], [0, 1]);
@@ -30,5 +29,9 @@ const Title: React.FC = () => {
 ```
 
 ```tsx
-<Title />
+import { preview } from 'remotion-md';
+
+preview(
+	<Title />
+)
 ```

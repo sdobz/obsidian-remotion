@@ -2,7 +2,7 @@
 ```tsx
 import React from 'react';
 import { useCurrentFrame, interpolate } from 'remotion';
-
+import { preview } from 'remotion-md';
 
 const Title: React.FC = ({children}) => {
 	const frame = useCurrentFrame();
@@ -29,18 +29,18 @@ const Title: React.FC = ({children}) => {
 };
 ```
 
-
-
-
-
-
+## Scene 1
 
 ```tsx
-<Title>Hello Remotion</Title>
+preview(
+	<Title>Hello Remotion</Title>
+)
 ```
 
-
+## Shot 2
 
 ```tsx
-<Title>Another Title</Title>
+shot(
+	<Title>Another Title</Title>
+)
 ```

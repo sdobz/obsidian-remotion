@@ -4,6 +4,7 @@ export interface SceneExport {
     exportName: string;
     blockIndex: number;
     startLine: number;
+    contentStartLineOffset: number;
 }
 
 export interface SynthesizedModule {
@@ -42,15 +43,25 @@ export function synthesizeVirtualModule(
     for (const block of blocks) {
         if (block.type === 'jsx-entry') {
             const exportName = `__scene_${block.blockIndex}`;
+            const exportLine = `export const ${exportName} = () => (`;
+            
+            // Unwrap preview(...) call if present
+            let content = block.content.trim();
+            const previewMatch = content.match(/^\s*preview\s*\(\s*([\s\S]*)\s*\)\s*$/);
+            if (previewMatch) {
+                content = previewMatch[1].trim();
+            }
+            
             sceneExports.push({
                 exportName,
                 blockIndex: block.blockIndex,
                 startLine: block.startLine + 1,
+                contentStartLineOffset: 2,
             });
 
             sceneParts.push(makeSentinel(block));
             sceneParts.push(
-                `export const ${exportName} = () => (\n${block.content}\n);`
+                `${exportLine}\n${content}\n);`
             );
         }
     }

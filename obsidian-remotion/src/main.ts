@@ -1,7 +1,7 @@
 import { Plugin, WorkspaceLeaf, MarkdownView, FileSystemAdapter } from 'obsidian';
 import { PreviewView, PREVIEW_VIEW_TYPE } from './previewView';
 import { PluginSettings, DEFAULT_SETTINGS, RemotionSettingTab } from './settings';
-import { extractCodeBlocks, classifyBlocks, synthesizeVirtualModule, compileVirtualModule, mapDiagnosticsToMarkdown } from 'remotion-md';
+import { extractCodeBlocks, classifyBlocks, synthesizeVirtualModule, compileVirtualModule, mapDiagnosticsToMarkdown, parseBundleError } from 'remotion-md';
 import { bundleVirtualModule } from './bundler';
 import { cursorToBlockIndex, blockIndexToSceneId } from './focusSync';
 import { editorDiagnosticsExtension, applyEditorDiagnostics, clearEditorDiagnostics } from './editorDiagnostics';
@@ -281,11 +281,7 @@ export default class RemotionPlugin extends Plugin {
         const notePath = activeView.file.path;
         const virtualFileName = `/virtual/${notePath}.tsx`;
         const synthesized = synthesizeVirtualModule(notePath, classified);
-        const compiled = compileVirtualModule(virtualFileName, synthesized.code);
-        const markdownDiagnostics = mapDiagnosticsToMarkdown(compiled.diagnostics, synthesized.code, classified);
-        if (version !== this.updateVersion) return;
-        this.updateEditorDiagnostics(activeView, markdownDiagnostics);
-
+        
         const vaultRoot = this.getVaultRootPath();
         if (!vaultRoot) {
             previewView.updateBundleOutput('/* vault root unavailable */', []);
@@ -294,8 +290,28 @@ export default class RemotionPlugin extends Plugin {
 
         const absoluteNotePath = path.join(vaultRoot, notePath);
         const nodeModulesPaths = this.findNodeModulesPaths(path.dirname(absoluteNotePath), vaultRoot);
-        const bundled = await bundleVirtualModule(compiled.code, virtualFileName, nodeModulesPaths);
+        console.debug('[plugin] vaultRoot:', vaultRoot);
+        console.debug('[plugin] absoluteNotePath:', absoluteNotePath);
+        console.debug('[plugin] nodeModulesPaths:', nodeModulesPaths);
+        console.debug('[plugin] Compiling:', virtualFileName);
+        
+        const compiled = compileVirtualModule(virtualFileName, synthesized.code, nodeModulesPaths);
+        console.debug('[plugin] Compilation diagnostics:', compiled.diagnostics.length);
+        console.debug('[plugin] Runtime modules:', Array.from(compiled.runtimeModules));
+        let markdownDiagnostics = mapDiagnosticsToMarkdown(compiled.diagnostics, synthesized.code, classified, synthesized.sceneExports);
         if (version !== this.updateVersion) return;
+        const bundled = await bundleVirtualModule(compiled.code, virtualFileName, nodeModulesPaths, compiled.runtimeModules);
+        if (version !== this.updateVersion) return;
+
+        // Add bundle errors to diagnostics
+        if (bundled.error) {
+            const bundleError = parseBundleError(bundled.error, classified);
+            if (bundleError) {
+                markdownDiagnostics = [...markdownDiagnostics, bundleError];
+            }
+        }
+
+        this.updateEditorDiagnostics(activeView, markdownDiagnostics);
 
         // Get editor metrics for spatial alignment
         const editorEl = (activeView.editor as any).cm;
@@ -312,7 +328,7 @@ export default class RemotionPlugin extends Plugin {
                 topOffset: block.startLine * lineHeight,
             }));
 
-        previewView.updateBundleOutput(bundled.code || '/* no output */', blockPositions);
+        previewView.updateBundleOutput(bundled.code || '/* no output */', blockPositions, compiled.runtimeModules);
     }
 
     private updateEditorDiagnostics(activeView: MarkdownView, diagnostics: ReturnType<typeof mapDiagnosticsToMarkdown>) {
@@ -358,6 +374,7 @@ export default class RemotionPlugin extends Plugin {
         const paths: string[] = [];
         let current = startDir;
 
+        // Walk up directory tree looking for node_modules (within vault)
         while (current.startsWith(rootDir)) {
             const candidate = path.join(current, 'node_modules');
             if (fs.existsSync(candidate)) {
@@ -370,11 +387,27 @@ export default class RemotionPlugin extends Plugin {
             current = parent;
         }
 
-        if (paths.length === 0) {
-            const fallback = path.join(rootDir, 'node_modules');
-            if (fs.existsSync(fallback)) {
-                paths.push(fallback);
+        // Always include root vault node_modules
+        const rootNodeModules = path.join(rootDir, 'node_modules');
+        if (fs.existsSync(rootNodeModules) && !paths.includes(rootNodeModules)) {
+            paths.push(rootNodeModules);
+        }
+
+        // Also search up PAST the vault root to find workspace node_modules
+        // (for cases where vault is nested inside a workspace)
+        current = rootDir;
+        while (true) {
+            const parent = path.dirname(current);
+            if (parent === current) break;
+            
+            const candidate = path.join(parent, 'node_modules');
+            if (fs.existsSync(candidate) && !paths.includes(candidate)) {
+                console.debug('[plugin] Found workspace node_modules at:', candidate);
+                paths.push(candidate);
+                break;
             }
+            
+            current = parent;
         }
 
         return paths;

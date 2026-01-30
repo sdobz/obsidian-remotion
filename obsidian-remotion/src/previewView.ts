@@ -64,7 +64,7 @@ export class PreviewView extends ItemView {
         this.iframe = null;
     }
 
-    private injectDependencies() {
+    private injectDependencies(requiredModules?: Set<string>) {
         if (!this.iframe?.contentWindow) {
             return;
         }
@@ -96,11 +96,27 @@ export class PreviewView extends ItemView {
             if (typeof req === 'function') {
                 // Set up __REMOTION_DEPS__ object with all dependencies
                 const deps: any = {};
-                try { deps.react = req('react'); } catch (e) { /* ignore */ }
-                try { deps.remotion = req('remotion'); } catch (e) { /* ignore */ }
-                try { deps['react-dom'] = req('react-dom'); } catch (e) { /* ignore */ }
-                try { deps['react-dom/client'] = req('react-dom/client'); } catch (e) { /* ignore */ }
-                try { deps['@remotion/player'] = req('@remotion/player'); } catch (e) { /* ignore */ }
+                
+                // Always try to load core dependencies
+                const coreModules = ['react', 'remotion', 'react-dom', 'react-dom/client', '@remotion/player'];
+                
+                // Add any additional runtime modules if specified
+                if (requiredModules) {
+                    for (const mod of requiredModules) {
+                        if (!coreModules.includes(mod)) {
+                            coreModules.push(mod);
+                        }
+                    }
+                }
+                
+                // Try to load each module
+                for (const modName of coreModules) {
+                    try {
+                        deps[modName] = req(modName);
+                    } catch (e) {
+                        // Silently ignore missing modules
+                    }
+                }
                 
                 (this.iframe.contentWindow as any).__REMOTION_DEPS__ = deps;
             }
@@ -109,8 +125,14 @@ export class PreviewView extends ItemView {
         }
     }
 
-    public updateBundleOutput(code: string, blockPositions: Array<{sceneId: string, startLine: number, endLine: number, topOffset: number}>) {
+    public updateBundleOutput(code: string, blockPositions: Array<{sceneId: string, startLine: number, endLine: number, topOffset: number}>, runtimeModules?: Set<string>) {
         if (!this.iframe?.contentWindow) return;
+        
+        // Reload dependencies if new modules are required
+        if (runtimeModules && runtimeModules.size > 0) {
+            this.injectDependencies(runtimeModules);
+        }
+        
         this.iframe.contentWindow.postMessage({
             type: 'bundle-output',
             payload: code,

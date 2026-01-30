@@ -112,6 +112,13 @@ export function blockPositionToMarkdown(
 
 function isLikelyJsxEntry(content: string): boolean {
     const trimmed = content.trim();
+    
+    // Check for preview(...) call pattern
+    if (/^\s*preview\s*\([\s\S]*\)\s*$/.test(trimmed)) {
+        return true;
+    }
+    
+    // Legacy: bare JSX detection
     if (!trimmed.startsWith('<')) return false;
 
     // Heuristic: if it contains module keywords, treat as module code
