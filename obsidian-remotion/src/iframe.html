@@ -15,18 +15,32 @@
             background: #1a1a1a;
             color: #fff;
         }
-        #players {
-            position: relative;
+        #preview-bands {
+            position: fixed;
+            left: 0;
+            top: 0;
             width: 100%;
-            min-height: 100vh;
-            /* Dynamic bottom padding set via JavaScript based on editor viewport height */
-            padding-bottom: 600px;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
         }
-        #players > div {
+        .preview-band {
             position: absolute;
             left: 0;
-            right: 0;
-            padding: 8px 12px;
+            width: 100%;
+            background: rgba(59, 130, 246, 0.15);
+            border-left: 4px solid rgba(59, 130, 246, 0.5);
+            pointer-events: none;
+        }
+        #players {
+            width: 100%;
+            padding: 12px;
+            position: relative;
+            z-index: 2;
+        }
+        #players > div {
+            margin-bottom: 16px;
+            padding: 8px;
             border-radius: 4px;
         }
         #players > div > .player-wrapper {
@@ -64,11 +78,13 @@
         <div class="loading-spinner">⏳</div>
     </div>
     <div id="players"></div>
+    <div id="preview-bands"></div>
     <script>
         // State management
         let typecheckState = { status: 'loading', errorCount: 0 };
         let bundleState = { status: 'loading', error: null };
         let hasContent = false;
+        let currentPreviewLocations = [];
 
         // Module registry for require polyfill
         const __modules__ = {};
@@ -125,6 +141,10 @@
             if (playersEl) {
                 playersEl.innerHTML = '';
             }
+            const bandsEl = document.getElementById('preview-bands');
+            if (bandsEl) {
+                bandsEl.innerHTML = '';
+            }
             clearError();
             
             // Reset status
@@ -134,7 +154,6 @@
             
             // Show loading screen
             showLoadingScreen();
-            updateStatusBar();
         }
 
         function renderEmptyState() {
@@ -166,7 +185,6 @@
                         <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No Previews</div>
                         <div style="font-size: 14px; line-height: 1.5; max-width: 400px;">
                             Add a TypeScript/TSX code block with a <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">preview()</code> call to see Remotion content here.
-            notifyStatusUpdateiv>
                     </div>
                 </div>
             `;
@@ -204,14 +222,7 @@
             
             // Use preview locations as position anchors
             // Each preview() call in the source maps to a component to display
-            const initialPositions = [];
             
-            scenes.forEach((scene, idx) => {
-                const loc = previewLocations && previewLocations[idx];
-                const top = loc ? loc.topOffset : (idx * 500);
-                initialPositions.push(top);
-            });
-
             const nodes = scenes.map((scene, idx) => {
                 const loc = previewLocations && previewLocations[idx];
                 // Merge preview location options with defaults
@@ -225,9 +236,6 @@
                         key: scene.id, 
                         'data-scene-id': scene.id,
                         'data-preview-line': (loc && loc.line) || 0,
-                        style: { 
-                            top: initialPositions[idx] + 'px',
-                        }
                     },
                     React.createElement(
                         'div',
@@ -253,32 +261,36 @@
             } else if (ReactDomClient.render) {
                 ReactDomClient.render(React.createElement(React.Fragment, null, ...nodes), playersEl);
             }
+            
+            // Render preview bands if type checking passed
+            renderPreviewBands(previewLocations);
+        }
 
-            // After rendering, adjust positions based on actual heights to prevent overlap
-            // Use setTimeout to ensure React has fully rendered the players
-            setTimeout(() => {
-                const MIN_SPACING = 16;
-                const playerElements = Array.from(playersEl.querySelectorAll('[data-scene-id]'));
-                const adjustedPositions = [];
-                let lastBottom = 0;
-
-                playerElements.forEach((el, idx) => {
-                    const desiredTop = initialPositions[idx];
-                    const actualHeight = el.getBoundingClientRect().height;
-                    
-                    // If desired position would cause overlap, push it down
-                    const actualTop = Math.max(desiredTop, lastBottom + MIN_SPACING);
-                    adjustedPositions.push(actualTop);
-                    lastBottom = actualTop + actualHeight;
-                    
-                    // Apply adjusted position
-                    el.style.top = actualTop + 'px';
-                });
-
-                // Update container min-height but preserve padding-bottom
-                const currentPadding = parseInt(playersEl.style.paddingBottom || '600');
-                playersEl.style.minHeight = (lastBottom + currentPadding) + 'px';
-            }, 100);
+        function renderPreviewBands(previewLocations) {
+            const bandsContainer = document.getElementById('preview-bands');
+            if (!bandsContainer) return;
+            
+            // Clear existing bands
+            bandsContainer.innerHTML = '';
+            
+            // Only show bands if we have preview locations and types passed
+            if (!previewLocations || previewLocations.length === 0) return;
+            if (typecheckState.status !== 'ok') return;
+            
+            // Create a band for each preview() call
+            previewLocations.forEach((loc) => {
+                if (typeof loc.topOffset !== 'number') return;
+                
+                const band = document.createElement('div');
+                band.className = 'preview-band';
+                
+                const height = typeof loc.height === 'number' && loc.height > 0 ? loc.height : 24;
+                
+                band.style.top = loc.topOffset + 'px';
+                band.style.height = height + 'px';
+                
+                bandsContainer.appendChild(band);
+            });
         }
 
         function renderError(errorMessage, errorStack) {
@@ -335,6 +347,9 @@
         }
 
         function loadBundle(code, previewLocations) {
+            // Store preview locations for band rendering
+            currentPreviewLocations = previewLocations || [];
+            
             try {
                 window.RemotionBundle = undefined;
                 // eslint-disable-next-line no-eval
@@ -398,6 +413,8 @@
                 typecheckState.status = data.status;
                 typecheckState.errorCount = data.errorCount || 0;
                 notifyStatusUpdate();
+                // Update bands when typecheck status changes
+                renderPreviewBands(currentPreviewLocations);
             } else if (data.type === 'bundle-status') {
                 bundleState.status = data.status;
                 bundleState.error = data.error || null;
@@ -406,30 +423,7 @@
                 if (data.payload) {
                     loadBundle(data.payload, data.previewLocations || []);
                 }
-            } else if (data.type === 'sync-scroll') {
-                // Update bottom padding if viewport height is provided
-                if (data.viewportHeight) {
-                    const playersEl = document.getElementById('players');
-                    if (playersEl) {
-                        // Match editor behavior: allow last content to scroll to top
-                        const padding = Math.max(data.viewportHeight - 200, 400);
-                        playersEl.style.paddingBottom = padding + 'px';
-                    }
-                }
-                window.scrollTo({ top: data.scrollTop, behavior: 'auto' });
             }
-        });
-
-        // Send scroll events from iframe to parent
-        let scrollTimeout = null;
-        window.addEventListener('scroll', () => {
-            if (scrollTimeout) clearTimeout(scrollTimeout);
-            scrollTimeout = setTimeout(() => {
-                window.parent.postMessage({
-                    type: 'iframe-scroll',
-                    scrollTop: window.scrollY
-                }, '*');
-            }, 5);
         });
 
         window.parent.postMessage({ type: 'iframe-ready' }, '*');

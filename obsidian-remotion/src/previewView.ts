@@ -1,11 +1,13 @@
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, WorkspaceLeaf, MarkdownView } from 'obsidian';
 import iframeHtml from './iframe.html';
+import { ScrollManager, PreviewLocation } from './scrollManager';
 
 export const PREVIEW_VIEW_TYPE = 'remotion-preview-view';
 
 export class PreviewView extends ItemView {
     private iframe: HTMLIFrameElement | null = null;
     private statusCallback: ((typecheck: any, bundle: any) => void) | null = null;
+    private scrollManager: ScrollManager | null = null;
     private handleMessage = (event: MessageEvent) => {
         const data = event.data as { 
             type?: string; 
@@ -58,6 +60,11 @@ export class PreviewView extends ItemView {
 
         this.iframe.addEventListener('load', () => {
             this.injectDependencies();
+            // Initialize ScrollManager after iframe loads
+            const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+            if (activeView && this.iframe) {
+                this.scrollManager = new ScrollManager(activeView, this.iframe);
+            }
         });
 
         window.addEventListener('message', this.handleMessage);
@@ -67,6 +74,7 @@ export class PreviewView extends ItemView {
         window.removeEventListener('message', this.handleMessage);
         this.iframe = null;
         this.statusCallback = null;
+        this.scrollManager = null;
     }
 
     public setStatusCallback(callback: (typecheck: any, bundle: any) => void) {
@@ -157,7 +165,7 @@ export class PreviewView extends ItemView {
         }, '*');
     }
 
-    public updateBundleOutput(code: string, previewLocations: Array<{line: number, column: number, topOffset: number, text: string, options?: Record<string, any>}>, runtimeModules?: Set<string>) {
+    public updateBundleOutput(code: string, previewLocations: Array<{line: number, column: number, topOffset: number, height?: number, text: string, options?: Record<string, any>}>, runtimeModules?: Set<string>) {
         if (!this.iframe?.contentWindow) return;
         
         // Reload dependencies if new modules are required
@@ -165,21 +173,15 @@ export class PreviewView extends ItemView {
             this.injectDependencies(runtimeModules);
         }
         
+        // Update scroll manager with new preview locations
+        if (this.scrollManager) {
+            this.scrollManager.handlePreviewLocations(previewLocations as PreviewLocation[]);
+        }
+        
         this.iframe.contentWindow.postMessage({
             type: 'bundle-output',
             payload: code,
             previewLocations,
-        }, '*');
-    }
-
-    public syncScroll(scrollTop: number, viewportHeight?: number) {
-        if (!this.iframe?.contentWindow) {
-            return;
-        }
-        this.iframe.contentWindow.postMessage({
-            type: 'sync-scroll',
-            scrollTop,
-            viewportHeight,
         }, '*');
     }
 }

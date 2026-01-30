@@ -3,7 +3,6 @@ import { PreviewView, PREVIEW_VIEW_TYPE } from './previewView';
 import { PluginSettings, DEFAULT_SETTINGS, RemotionSettingTab } from './settings';
 import { editorDiagnosticsExtension } from './editorDiagnostics';
 import { CompilationManager } from './compilationManager';
-import { ScrollSync } from './scrollSync';
 import { ViewManager } from './viewManager';
 import path from 'path';
 import fs from 'fs';
@@ -11,22 +10,9 @@ import fs from 'fs';
 export default class RemotionPlugin extends Plugin {
     public settings!: PluginSettings;
     private compilationManager!: CompilationManager;
-    private scrollSync!: ScrollSync;
     private viewManager!: ViewManager;
     private typecheckStatusBarItem: HTMLElement | null = null;
     private bundleStatusBarItem: HTMLElement | null = null;
-
-    private handleIframeMessage = (event: MessageEvent) => {
-        const data = event.data as { type?: string; sceneId?: string; scrollTop?: number };
-        if (!data) return;
-
-        if (data.type === 'iframe-scroll') {
-            const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-            if (activeView) {
-                this.scrollSync.syncPreviewToEditor(activeView, data.scrollTop || 0);
-            }
-        }
-    };
 
     async onload() {
         await this.loadSettings();
@@ -38,7 +24,6 @@ export default class RemotionPlugin extends Plugin {
         if (vaultRoot) {
             this.compilationManager = new CompilationManager(vaultRoot, this.findNodeModulesPaths.bind(this));
         }
-        this.scrollSync = new ScrollSync();
         this.viewManager = new ViewManager(this.app);
 
         // Set plugin directory for runtime
@@ -76,9 +61,6 @@ export default class RemotionPlugin extends Plugin {
             this.app.workspace.on('editor-change', () => this.schedulePreviewUpdate())
         );
 
-        // Listen for messages from iframe
-        window.addEventListener('message', this.handleIframeMessage);
-
         // Initial check
         this.onActiveLeafChange();
     }
@@ -115,9 +97,7 @@ export default class RemotionPlugin extends Plugin {
                 previewView.resetForNewFile();
             }
             this.schedulePreviewUpdate();
-            this.scrollSync.attach(activeView, () => this.syncScroll());
         } else {
-            this.scrollSync.detach();
             this.compilationManager?.clearDiagnostics(activeView);
         }
     }
@@ -128,15 +108,6 @@ export default class RemotionPlugin extends Plugin {
         this.compilationManager.scheduleUpdate(async () => {
             await this.updatePreview();
         });
-    }
-
-    private syncScroll(): void {
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-        const previewView = this.viewManager.getPreviewView();
-        
-        if (activeView && previewView) {
-            this.scrollSync.syncEditorToPreview(activeView, previewView);
-        }
     }
 
     private async updatePreview(): Promise<void> {
@@ -207,8 +178,6 @@ export default class RemotionPlugin extends Plugin {
     }
 
     async onunload() {
-        window.removeEventListener('message', this.handleIframeMessage);
-        this.scrollSync.detach();
         this.app.workspace.detachLeavesOfType(PREVIEW_VIEW_TYPE);
         this.typecheckStatusBarItem = null;
         this.bundleStatusBarItem = null;

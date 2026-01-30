@@ -30,6 +30,6 @@ const Title: React.FC = () => {
 
 ```tsx
 preview(
-	<Title />
+	() => <Title />
 )
 ```
