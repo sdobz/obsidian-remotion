@@ -34,6 +34,7 @@
 
         # node toolchain for plugin dev
         pkgs.nodejs_22
+        pkgs.cloc
       ];
 
       # Helpful environment hints and PATH adjustments

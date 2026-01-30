@@ -10,7 +10,7 @@ const Title: React.FC = () => {
 	return (
 		<div
 			style={{
-				fontSize: 80,
+				fontSize: 90,
 				fontWeight: 700,
 				color: '#fff',
 				background: '#111',
@@ -22,7 +22,7 @@ const Title: React.FC = () => {
 				opacity,
 			}}
 		>
-			Hello Remotion
+			Hello Remotion!
 		</div>
 	);
 };
