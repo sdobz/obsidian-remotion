@@ -39,6 +39,7 @@ const Second = preview(
 	() => <Title>Another Title?</Title>
 )
 
+
 export default preview(() => <Series>
 	<Series.Sequence durationInFrames={30}>
 		<First />
@@ -48,4 +49,3 @@ export default preview(() => <Series>
 	</Series.Sequence>
 </Series>, {durationInFrames: 60})
 ```
-

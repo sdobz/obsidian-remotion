@@ -143,6 +143,7 @@ export function clearEditorDiagnostics(view: EditorView) {
 export function toPixelBand(
   span: PreviewSpan,
   editorView: EditorView,
+  scrollTop: number,
 ): PixelBand | null {
   const spanStart = span.pos ?? 0;
   const spanEnd = spanStart + (span.length || 0);
@@ -154,8 +155,8 @@ export function toPixelBand(
   if (startCoords && endCoords) {
     const height = endCoords.bottom - startCoords.top;
     // Document coordinates = scroll position + viewport-relative position
-    const topOffset = startCoords.top;
-    return { topOffset, height };
+    const top = scrollTop + startCoords.top;
+    return { top, height };
   }
 
   // Span is outside viewport

@@ -2,10 +2,9 @@ import type { EditorView } from "@codemirror/view";
 import type { PreviewSpan } from "remotion-md";
 import * as scrollMath from "./scrollMath";
 import { toPixelBand } from "./editor";
-import { hash } from "crypto";
 
 export interface PixelBand {
-  topOffset: number;
+  top: number;
   height: number;
 }
 
@@ -39,7 +38,13 @@ export class ScrollManager {
   private currentPlayerPositions: (PixelBand | null)[] = [];
   private currentPlayerHeights: number[] = [];
   private scrollListener: (() => void) | null = null;
-  private lastViewportBandSet = "";
+  private applyingScroll = false; // Prevent feedback loops from player scroll
+  private applyingScrollTimeout: number | null = null;
+  // Separate scroll states for forward (editor->player) and reverse (player->editor) mappings
+  private spanScrollState: scrollMath.ScrollState = { lastActiveIndex: null };
+  private previewScrollState: scrollMath.ScrollState = {
+    lastActiveIndex: null,
+  };
 
   constructor(
     private scrollDOM: HTMLElement,
@@ -59,14 +64,8 @@ export class ScrollManager {
     return this.scrollDOM.scrollHeight;
   }
 
-  /**
-   * Get the offset of scrollDOM from its container top
-   * Used to apply padding to iframe bands container for visual alignment
-   */
-  getScrollDOMOffset(): number {
-    const scrollRect = this.scrollDOM.getBoundingClientRect();
-    const containerRect = this.container.getBoundingClientRect();
-    return containerRect.top - scrollRect.top;
+  get scrollElement(): HTMLElement {
+    return this.scrollDOM;
   }
 
   /**
@@ -83,7 +82,7 @@ export class ScrollManager {
    */
   private handleReflow(): void {
     this.currentBands = this.currentSpans.map((span) =>
-      toPixelBand(span, this.editorView),
+      toPixelBand(span, this.editorView, this.scrollTop),
     );
     this.lastBandHash = scrollMath.hashBands(this.currentBands);
 
@@ -93,7 +92,7 @@ export class ScrollManager {
 
   private handleScroll(): void {
     const nextBands = this.currentSpans.map((span) =>
-      toPixelBand(span, this.editorView),
+      toPixelBand(span, this.editorView, this.scrollTop),
     );
     const nextBandHash = scrollMath.hashBands(nextBands);
 
@@ -111,15 +110,13 @@ export class ScrollManager {
    * Use existing state to perform reflow
    */
   private performReflow(): void {
-    this.currentPlayerPositions = scrollMath.layoutPlayers(
+    const layoutResult = scrollMath.layoutPlayers(
       this.currentBands,
+      this.scrollHeight,
       this.currentPlayerHeights,
     );
-    const playerScrollHeight = scrollMath.computePlayerScrollHeight(
-      this.scrollHeight,
-      this.currentBands,
-      this.currentPlayerPositions,
-    );
+    this.currentPlayerPositions = layoutResult.positions;
+    const playerScrollHeight = layoutResult.height;
 
     this.delegate.onReflow(
       this.scrollHeight,
@@ -143,19 +140,62 @@ export class ScrollManager {
    * Notify delegate of scroll position and player positions
    */
   private performScroll(): void {
-    const activeWeight = scrollMath.findActiveWeight(
+    const playerScrollTop = scrollMath.mapScroll(
       this.currentBands,
       this.scrollTop,
       this.container.clientHeight,
-    );
-    const playerScrollTop = scrollMath.computePlayerScrollTop(
-      activeWeight,
-      this.currentBands,
       this.currentPlayerPositions,
-      this.scrollTop,
+      this.container.clientHeight,
+      this.spanScrollState,
     );
 
     this.delegate.onScroll(this.scrollTop, playerScrollTop);
+  }
+
+  /**
+   * Handle scroll events from the iframe player container
+   * Maps player scroll back to editor scroll using reverse algorithm
+   * Debounced to prevent feedback loops when editor applies scroll to player
+   */
+  handlePlayerScroll(playerScrollTop: number): void {
+    // Ignore scroll events if we just applied a scroll programmatically
+    if (this.applyingScroll) {
+      return;
+    }
+
+    const editorScrollTop = scrollMath.mapScroll(
+      this.currentPlayerPositions,
+      playerScrollTop,
+      this.container.clientHeight,
+      this.currentBands,
+      this.container.clientHeight,
+      this.previewScrollState,
+    );
+
+    this.applyEditorScroll(editorScrollTop);
+  }
+
+  /**
+   * Apply a computed editor scroll position
+   * Marks scroll as programmatic to prevent feedback loops
+   */
+  private applyEditorScroll(scrollTop: number): void {
+    this.setApplyingScroll();
+    this.scrollDOM.scrollTop = scrollTop;
+  }
+
+  /**
+   * Mark that we're applying scroll programmatically to prevent feedback loops
+   */
+  private setApplyingScroll(): void {
+    this.applyingScroll = true;
+    if (this.applyingScrollTimeout !== null) {
+      clearTimeout(this.applyingScrollTimeout);
+    }
+    this.applyingScrollTimeout = window.setTimeout(() => {
+      this.applyingScroll = false;
+      this.applyingScrollTimeout = null;
+    }, 50); // 50ms window to ignore echo scroll events
   }
   /**
    * Set up scroll event listener to notify viewport changes

@@ -16,8 +16,14 @@
   text-decoration-color: var(--text-error);
 }
 
+/* Show view header for remotion preview even in side panels */
+.view-content:has(.remotion-preview-container) .view-header {
+  display: flex !important;
+}
+
 .remotion-preview-container {
   padding: 0 !important;
+  padding-top: var(--header-height) !important;
   overflow: hidden;
 }
 

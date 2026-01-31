@@ -20,17 +20,19 @@
         /* Main container with two scrolling regions */
         .scroller {
             position: absolute;
-            overflow: hidden;
             width: 100%;
             height: 100%;
         }
 
         #bands-scroller {
             z-index: 1;
+            overflow: hidden;
         }
 
         #players-scroller {
-            z-index: 2;
+            z-index: 4;
+            overflow: auto;
+            pointer-events: auto;
         }
 
         #link-overlay {
@@ -99,10 +101,10 @@
     <div class="scroller" id="bands-scroller">
         <div class="scrollee" id="bands-container"></div>
     </div>
+    <svg id="link-overlay"></svg>
     <div class="scroller" id="players-scroller">
         <div class="scrollee" id="players-container"></div>
     </div>
-    <svg id="link-overlay"></svg>
     <script>__IFRAME_SCRIPT__</script>
 </body>
 </html>

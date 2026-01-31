@@ -19,6 +19,10 @@ export type PreviewMessage =
       players: PlayerStatus[];
     }
   | {
+      type: "player-scroll";
+      playerScrollTop: number;
+    }
+  | {
       type: "iframe-ready";
     };
 
@@ -33,7 +37,6 @@ export type IframeCommand =
       bands: (PixelBand | null)[];
       playerScrollHeight: number;
       players: (PixelBand | null)[];
-      editorOffsetTop?: number;
     }
   | {
       type: "bundle";
@@ -61,6 +64,9 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       this.scrollManager?.handlePlayerHeights(
         data.players.map((p) => p.height),
       );
+    } else if (data.type === "player-scroll") {
+      // Player container was scrolled, map back to editor scroll
+      this.scrollManager?.handlePlayerScroll(data.playerScrollTop);
     }
   };
 
@@ -126,7 +132,6 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       bands,
       playerScrollHeight,
       players,
-      editorOffsetTop: this.scrollManager?.getScrollDOMOffset(),
     };
     this.iframe.contentWindow.postMessage(cmd, "*");
   }

@@ -24,7 +24,7 @@ let currentBandScrollTop = 0;
 let currentPlayerScrollTop = 0;
 let previousPlayerHeights: number[] = [];
 let currentSequence: Sequence | null = null;
-let hasRenderedPlayers = false;
+let applyingScroll = false; // Prevent scroll event feedback when programmatically scrolling
 const playerUnloadTimers = new Map<number, number>();
 const UNLOAD_DEBOUNCE_MS = 300;
 
@@ -40,6 +40,19 @@ const DOM = {
   ) as unknown as SVGSVGElement,
   errorOverlay: null as HTMLElement | null,
 };
+
+// Ensure player scroller captures scroll events and sends them to parent
+DOM.playerScroller.addEventListener("scroll", () => {
+  if (applyingScroll) return; // Ignore scroll events we just programmatically applied
+
+  window.parent.postMessage(
+    {
+      type: "player-scroll",
+      playerScrollTop: DOM.playerScroller.scrollTop,
+    },
+    "*",
+  );
+});
 
 // Module registry for require polyfill
 const __modules__: Record<string, unknown> = {};
@@ -93,7 +106,6 @@ function resetPanel() {
   currentPlayerScrollTop = 0;
   previousPlayerHeights = [];
   currentSequence = null;
-  hasRenderedPlayers = false;
   // Clear all player unload timers
   playerUnloadTimers.forEach((timer) => clearTimeout(timer));
   playerUnloadTimers.clear();
@@ -107,16 +119,10 @@ function resetPanel() {
 }
 
 function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
+  console.log(cmd);
   // Store positions for rendering/overlay
   playerPositions = cmd.players;
   currentBands = cmd.bands;
-
-  // Apply editor offset as CSS padding to align iframe with editor
-  if (cmd.editorOffsetTop && cmd.editorOffsetTop > 0) {
-    DOM.bandsContainer.style.paddingTop = cmd.editorOffsetTop + "px";
-  } else {
-    DOM.bandsContainer.style.paddingTop = "";
-  }
 
   // Set preview bands container height to match editor scroll height
   DOM.bandsContainer.style.height = cmd.bandScrollHeight + "px";
@@ -131,9 +137,6 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
   }
 
   const playerElements = Array.from(DOM.playersContainer.children);
-
-  // Track if we render any players in this reflow
-  let renderedAnyPlayers = false;
 
   // For each player in the sequence
   for (let i = 0; i < currentSequence.scenes.length; i++) {
@@ -151,7 +154,6 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
       if (!playerElements[i]) {
         console.log(`[Iframe] Band back for player ${i}, rendering`);
         renderPlayer(i, currentSequence.scenes[i]);
-        renderedAnyPlayers = true;
       }
     } else {
       // Player has no band - schedule unload if not already scheduled
@@ -164,11 +166,6 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
         playerUnloadTimers.set(i, timer);
       }
     }
-  }
-
-  // Mark as rendered if we rendered any players
-  if (renderedAnyPlayers) {
-    hasRenderedPlayers = true;
   }
 
   // Reposition all existing players with new positions
@@ -192,19 +189,14 @@ function handleScroll(cmd: IframeCommand & { type: "scroll" }) {
   currentBandScrollTop = cmd.bandScrollTop;
 
   // Scroll players container using matching algorithm
+  // Mark as applying to prevent echo scroll events back to parent
+  applyingScroll = true;
   DOM.playerScroller.scrollTop = cmd.playerScrollTop;
   currentPlayerScrollTop = cmd.playerScrollTop;
-
-  // If we have sequence but haven't rendered players yet, check if bands are now in viewport
-  if (
-    currentSequence &&
-    !hasRenderedPlayers &&
-    currentBands.some((band) => band !== null)
-  ) {
-    console.log("[Iframe] Bands in viewport after scroll, rendering players");
-    renderPlayers(currentSequence);
-    hasRenderedPlayers = true;
-  }
+  // Clear flag after a frame to allow natural scroll events again
+  requestAnimationFrame(() => {
+    applyingScroll = false;
+  });
 
   renderBandPlayerLinks();
 }
@@ -456,7 +448,7 @@ function renderPlayer(index: number, scene: Scene): void {
   const position = playerPositions[index];
   if (position) {
     playerDiv.style.position = "absolute";
-    playerDiv.style.top = `${position.topOffset}px`;
+    playerDiv.style.top = `${position.top}px`;
     playerDiv.style.left = "12px";
     playerDiv.style.right = "12px";
   }
@@ -475,7 +467,7 @@ function repositionPlayers(): void {
     const position = playerPositions[index];
     if (position) {
       element.style.position = "absolute";
-      element.style.top = `${position.topOffset}px`;
+      element.style.top = `${position.top}px`;
       element.style.left = "12px";
       element.style.right = "12px";
     }
@@ -496,9 +488,9 @@ function renderBandPlayerLinks(): void {
 
     if (!band || !player) continue;
 
-    const bandTop = band.topOffset - currentBandScrollTop;
+    const bandTop = band.top - currentBandScrollTop;
     const bandBottom = bandTop + band.height;
-    const playerTop = player.topOffset - currentPlayerScrollTop;
+    const playerTop = player.top - currentPlayerScrollTop;
     const playerBottom = playerTop + player.height;
 
     const polygon = document.createElementNS(
@@ -529,7 +521,7 @@ function renderPreviewBands(previewLocations: (PixelBand | null)[]): void {
     const band = document.createElement("div");
     band.className = "preview-band";
 
-    band.style.top = loc.topOffset + "px";
+    band.style.top = loc.top + "px";
     band.style.height = loc.height + "px";
 
     DOM.bandsContainer.appendChild(band);
@@ -628,7 +620,6 @@ function loadBundle(code: string): void {
     // Only render players if we have bands (spans in viewport)
     if (currentBands.length > 0) {
       renderPlayers(sequence);
-      hasRenderedPlayers = true;
     } else {
       console.log(
         "[Iframe] Bundle loaded but no bands in viewport, deferring render",
