@@ -101,8 +101,8 @@ export class ScrollManager {
    * Notify delegate of scroll position and player positions
    */
   private handleScroll(): void {
-    const activePlayerIndex = this.findActivePlayerIndex(this.currentBands);
-    const playerScrollTop = this.computePlayerScrollTop(activePlayerIndex);
+    const activeWeight = this.findActiveWeight(this.currentBands);
+    const playerScrollTop = this.computePlayerScrollTop(activeWeight);
 
     this.delegate.onScroll(this.scrollTop, playerScrollTop);
   }
@@ -254,53 +254,102 @@ export class ScrollManager {
   }
 
   /**
-   * Find the active player index - the one closest to the viewport center
+   * Find the active weight - a float representing position between bands
+   * Returns index + fractional weight (0-1) based on distance to viewport center
+   * Only blends if bands are within viewport height, otherwise snaps to nearest
    */
-  private findActivePlayerIndex(bands: PixelBand[]): number {
-    const viewportCenter = this.scrollTop + this.container.clientHeight / 2;
+  private findActiveWeight(bands: PixelBand[]): number {
+    if (bands.length === 0) return 0;
+    if (bands.length === 1) return 0;
 
-    let activeIndex = 0;
-    let closestDistance = Number.POSITIVE_INFINITY;
+    const viewportCenter = this.scrollTop + this.container.clientHeight / 2;
+    const viewportHeight = this.container.clientHeight;
+    const blendDistance = viewportHeight; // Only blend within one screen height
+
+    // Find two closest bands
+    let closest1 = 0;
+    let closest2 = 0;
+    let distance1 = Number.POSITIVE_INFINITY;
+    let distance2 = Number.POSITIVE_INFINITY;
 
     for (let i = 0; i < bands.length; i++) {
       const band = bands[i];
       const bandCenter = band.topOffset + band.height / 2;
       const distance = Math.abs(bandCenter - viewportCenter);
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        activeIndex = i;
+
+      if (distance < distance1) {
+        distance2 = distance1;
+        closest2 = closest1;
+        distance1 = distance;
+        closest1 = i;
+      } else if (distance < distance2) {
+        distance2 = distance;
+        closest2 = i;
       }
     }
 
-    return activeIndex;
+    // If only one band is close or bands are too far apart, snap to closest
+    if (distance2 > blendDistance || distance1 + distance2 === 0) {
+      return closest1;
+    }
+
+    // Calculate blend weight between the two closest bands
+    // weight closer to 0 = more of closest1, closer to 1 = more of closest2
+    const totalDistance = distance1 + distance2;
+    const weight = distance1 / totalDistance;
+
+    // Return interpolated position
+    if (closest1 < closest2) {
+      return closest1 + weight;
+    } else {
+      return closest2 + (1 - weight);
+    }
   }
 
   /**
-   * Compute player scroll position using matching algorithm:
-   * 1. Identify the active preview span (closest to viewport center)
-   * 2. Scroll players such that the active player's center aligns with the active band's center on screen
+   * Compute player scroll position using matching algorithm with smooth blending:
+   * 1. Use activeWeight (can be fractional) to identify active span(s)
+   * 2. Blend between adjacent players if activeWeight is fractional
+   * 3. Align blended player center with corresponding blended band center on screen
    */
-  private computePlayerScrollTop(activePlayerIndex: number): number {
+  private computePlayerScrollTop(activeWeight: number): number {
     if (
       this.currentBands.length === 0 ||
-      this.currentPlayerPositions.length === 0 ||
-      activePlayerIndex >= this.currentBands.length
+      this.currentPlayerPositions.length === 0
     ) {
       return 0;
     }
 
-    const activeBand = this.currentBands[activePlayerIndex];
-    const activePlayer = this.currentPlayerPositions[activePlayerIndex];
+    const index1 = Math.floor(activeWeight);
+    const index2 = Math.min(index1 + 1, this.currentBands.length - 1);
+    const fraction = activeWeight - index1;
 
-    // Calculate offset between player and band centers
-    const bandCenter = activeBand.topOffset + activeBand.height / 2;
-    const playerCenter = activePlayer.topOffset + activePlayer.height / 2;
-    const centerOffset = playerCenter - bandCenter;
+    const band1 = this.currentBands[index1];
+    const player1 = this.currentPlayerPositions[index1];
 
-    // Player scroll top = preview scroll top + center offset
-    // This aligns the player center with the band center on screen
-    const playerScrollTop = Math.max(0, this.scrollTop + centerOffset);
+    if (fraction === 0 || index1 === index2) {
+      // No blending needed, use exact position
+      const bandCenter = band1.topOffset + band1.height / 2;
+      const playerCenter = player1.topOffset + player1.height / 2;
+      const centerOffset = playerCenter - bandCenter;
+      return Math.max(0, this.scrollTop + centerOffset);
+    }
 
-    return playerScrollTop;
+    // Blend between two adjacent bands/players
+    const band2 = this.currentBands[index2];
+    const player2 = this.currentPlayerPositions[index2];
+
+    const bandCenter1 = band1.topOffset + band1.height / 2;
+    const bandCenter2 = band2.topOffset + band2.height / 2;
+    const blendedBandCenter =
+      bandCenter1 * (1 - fraction) + bandCenter2 * fraction;
+
+    const playerCenter1 = player1.topOffset + player1.height / 2;
+    const playerCenter2 = player2.topOffset + player2.height / 2;
+    const blendedPlayerCenter =
+      playerCenter1 * (1 - fraction) + playerCenter2 * fraction;
+
+    const centerOffset = blendedPlayerCenter - blendedBandCenter;
+    return Math.max(0, this.scrollTop + centerOffset);
   }
 }
