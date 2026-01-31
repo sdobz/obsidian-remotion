@@ -18,11 +18,28 @@ type Sequence = {
 
 // State management
 let hasContent = false;
-let playerPositions: PixelBand[] = [];
-let currentBands: PixelBand[] = [];
+let playerPositions: (PixelBand | null)[] = [];
+let currentBands: (PixelBand | null)[] = [];
 let currentBandScrollTop = 0;
 let currentPlayerScrollTop = 0;
 let previousPlayerHeights: number[] = [];
+let currentSequence: Sequence | null = null;
+let hasRenderedPlayers = false;
+const playerUnloadTimers = new Map<number, number>();
+const UNLOAD_DEBOUNCE_MS = 300;
+
+// DOM element cache - all elements are known to exist in the iframe structure
+const DOM = {
+  loadingScreen: document.getElementById("loading-screen")!,
+  playersContainer: document.getElementById("players-container")!,
+  bandsContainer: document.getElementById("bands-container")!,
+  bandScroller: document.getElementById("bands-scroller")!,
+  playerScroller: document.getElementById("players-scroller")!,
+  linkOverlay: document.getElementById(
+    "link-overlay",
+  ) as unknown as SVGSVGElement,
+  errorOverlay: null as HTMLElement | null,
+};
 
 // Module registry for require polyfill
 const __modules__: Record<string, unknown> = {};
@@ -46,18 +63,12 @@ function require(id: string): unknown {
 let __root: any = null;
 
 function showLoadingScreen() {
-  const loadingScreen = document.getElementById("loading-screen");
-  if (loadingScreen) {
-    loadingScreen.classList.remove("hidden");
-  }
+  DOM.loadingScreen.classList.remove("hidden");
   hasContent = false;
 }
 
 function hideLoadingScreen() {
-  const loadingScreen = document.getElementById("loading-screen");
-  if (loadingScreen) {
-    loadingScreen.classList.add("hidden");
-  }
+  DOM.loadingScreen.classList.add("hidden");
   hasContent = true;
 }
 
@@ -73,23 +84,19 @@ function resetPanel() {
   }
 
   // Clear all state
-  const playersEl = document.getElementById("players-container");
-  if (playersEl) {
-    playersEl.innerHTML = "";
-  }
-  const bandsEl = document.getElementById("bands-container");
-  if (bandsEl) {
-    bandsEl.innerHTML = "";
-  }
-  const overlayEl = document.getElementById("link-overlay");
-  if (overlayEl) {
-    overlayEl.innerHTML = "";
-  }
+  DOM.playersContainer.innerHTML = "";
+  DOM.bandsContainer.innerHTML = "";
+  DOM.linkOverlay.innerHTML = "";
   playerPositions = [];
   currentBands = [];
   currentBandScrollTop = 0;
   currentPlayerScrollTop = 0;
   previousPlayerHeights = [];
+  currentSequence = null;
+  hasRenderedPlayers = false;
+  // Clear all player unload timers
+  playerUnloadTimers.forEach((timer) => clearTimeout(timer));
+  playerUnloadTimers.clear();
   clearError();
 
   // Reset status
@@ -104,19 +111,70 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
   playerPositions = cmd.players;
   currentBands = cmd.bands;
 
+  // Apply editor offset as CSS padding to align iframe with editor
+  if (cmd.editorOffsetTop && cmd.editorOffsetTop > 0) {
+    DOM.bandsContainer.style.paddingTop = cmd.editorOffsetTop + "px";
+  } else {
+    DOM.bandsContainer.style.paddingTop = "";
+  }
+
   // Set preview bands container height to match editor scroll height
-  document.getElementById("bands-container")!.style.height =
-    cmd.bandScrollHeight + "px";
+  DOM.bandsContainer.style.height = cmd.bandScrollHeight + "px";
   // Set players container height accounting for overlaps
-  document.getElementById("players-container")!.style.height =
-    cmd.playerScrollHeight + "px";
+  DOM.playersContainer.style.height = cmd.playerScrollHeight + "px";
 
   renderPreviewBands(cmd.bands);
 
-  // Reposition any existing players with new positions
-  repositionPlayers();
-  renderBandPlayerLinks();
+  if (!currentSequence) {
+    renderBandPlayerLinks();
+    return;
+  }
 
+  const playerElements = Array.from(DOM.playersContainer.children);
+
+  // Track if we render any players in this reflow
+  let renderedAnyPlayers = false;
+
+  // For each player in the sequence
+  for (let i = 0; i < currentSequence.scenes.length; i++) {
+    const hasBand = cmd.bands[i] !== null;
+
+    if (hasBand) {
+      // Player has a band - cancel any pending unload timer
+      const timer = playerUnloadTimers.get(i);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        playerUnloadTimers.delete(i);
+      }
+
+      // Ensure player is rendered
+      if (!playerElements[i]) {
+        console.log(`[Iframe] Band back for player ${i}, rendering`);
+        renderPlayer(i, currentSequence.scenes[i]);
+        renderedAnyPlayers = true;
+      }
+    } else {
+      // Player has no band - schedule unload if not already scheduled
+      if (!playerUnloadTimers.has(i) && playerElements[i]) {
+        const timer = setTimeout(() => {
+          console.log(`[Iframe] Unloading player ${i} (no band)`);
+          unloadPlayer(i);
+          playerUnloadTimers.delete(i);
+        }, UNLOAD_DEBOUNCE_MS) as unknown as number;
+        playerUnloadTimers.set(i, timer);
+      }
+    }
+  }
+
+  // Mark as rendered if we rendered any players
+  if (renderedAnyPlayers) {
+    hasRenderedPlayers = true;
+  }
+
+  // Reposition all existing players with new positions
+  repositionPlayers();
+
+  renderBandPlayerLinks();
   schedulePlayerUpdate();
 }
 
@@ -124,17 +182,29 @@ function handleBundle(cmd: IframeCommand & { type: "bundle" }) {
   if (cmd.payload) {
     loadBundle(cmd.payload);
     // After bundle loads, players should render and send back player-status
+    // The rendering will happen in loadBundle if there are bands
   }
 }
 
 function handleScroll(cmd: IframeCommand & { type: "scroll" }) {
   // Scroll preview bands container to match editor scroll
-  document.getElementById("bands-scroller")!.scrollTop = cmd.bandScrollTop;
+  DOM.bandScroller.scrollTop = cmd.bandScrollTop;
   currentBandScrollTop = cmd.bandScrollTop;
 
   // Scroll players container using matching algorithm
-  document.getElementById("players-scroller")!.scrollTop = cmd.playerScrollTop;
+  DOM.playerScroller.scrollTop = cmd.playerScrollTop;
   currentPlayerScrollTop = cmd.playerScrollTop;
+
+  // If we have sequence but haven't rendered players yet, check if bands are now in viewport
+  if (
+    currentSequence &&
+    !hasRenderedPlayers &&
+    currentBands.some((band) => band !== null)
+  ) {
+    console.log("[Iframe] Bands in viewport after scroll, rendering players");
+    renderPlayers(currentSequence);
+    hasRenderedPlayers = true;
+  }
 
   renderBandPlayerLinks();
 }
@@ -150,9 +220,7 @@ function renderEmptyState(): void {
     __root = null;
   }
 
-  const playersEl = document.getElementById("players-container")!;
-
-  playersEl.innerHTML = `
+  DOM.playersContainer.innerHTML = `
         <div style="
             display: flex;
             align-items: center;
@@ -182,7 +250,6 @@ function renderPlayers(sequence: Sequence): void {
     (PlayerModule && PlayerModule.default) ||
     PlayerModule;
   const ReactDomClient = deps["react-dom/client"] || deps["react-dom"];
-  const playersEl = document.getElementById("players-container")!;
 
   if (!React || !ReactDomClient || !Player) {
     throw new Error("Missing React, ReactDOM, or @remotion/player");
@@ -191,7 +258,7 @@ function renderPlayers(sequence: Sequence): void {
   const createRoot =
     ReactDomClient.createRoot || ReactDomClient.unstable_createRoot;
   if (createRoot && !__root) {
-    __root = createRoot(playersEl);
+    __root = createRoot(DOM.playersContainer);
   }
 
   // Default player options (must match PREVIEW_DEFAULTS in preview.ts)
@@ -244,7 +311,7 @@ function renderPlayers(sequence: Sequence): void {
   } else if (ReactDomClient.render) {
     ReactDomClient.render(
       React.createElement(React.Fragment, null, ...nodes),
-      playersEl,
+      DOM.playersContainer,
     );
   }
 
@@ -257,10 +324,7 @@ function renderPlayers(sequence: Sequence): void {
 function schedulePlayerUpdate(): void {
   // Notify parent that players have been rendered with their dimensions
   setTimeout(() => {
-    const playersContainer = document.getElementById("players-container");
-    const playerElements = playersContainer
-      ? Array.from(playersContainer.children)
-      : [];
+    const playerElements = Array.from(DOM.playersContainer.children);
 
     const playerStatuses = playerElements.map((el, index) => ({
       index,
@@ -283,13 +347,129 @@ function schedulePlayerUpdate(): void {
 }
 
 /**
+ * Unload a specific player by index
+ */
+function unloadPlayer(index: number): void {
+  const playerElement = DOM.playersContainer.children[index] as HTMLElement;
+  if (playerElement) {
+    playerElement.remove();
+    // Clear the height entry for this player
+    if (index < previousPlayerHeights.length) {
+      previousPlayerHeights[index] = 0;
+    }
+  }
+}
+
+/**
+ * Render a specific player by index
+ */
+function renderPlayer(index: number, scene: Scene): void {
+  const deps = (window as any).__REMOTION_DEPS__ || {};
+  const React = deps.react;
+  const PlayerModule = deps["@remotion/player"];
+  const Player =
+    (PlayerModule && PlayerModule.Player) ||
+    (PlayerModule && PlayerModule.default) ||
+    PlayerModule;
+
+  if (!React || !Player) {
+    console.error("Missing React or @remotion/player");
+    return;
+  }
+
+  const playersContainer = document.getElementById("players-container");
+  if (!playersContainer) return;
+
+  // Default player options
+  const DEFAULT_OPTIONS = {
+    durationInFrames: 150,
+    fps: 30,
+    compositionWidth: 1280,
+    compositionHeight: 720,
+    controls: true,
+    loop: false,
+    autoPlay: false,
+  };
+
+  const playerOptions = scene.options
+    ? { ...DEFAULT_OPTIONS, ...scene.options }
+    : DEFAULT_OPTIONS;
+
+  // Create player element
+  const playerDiv = document.createElement("div");
+  playerDiv.setAttribute("data-scene-id", scene.id);
+
+  const playerWrapper = document.createElement("div");
+  playerWrapper.className = "player-wrapper";
+  playerDiv.appendChild(playerWrapper);
+
+  // Insert at the correct index position
+  if (index < DOM.playersContainer.children.length) {
+    DOM.playersContainer.insertBefore(
+      playerDiv,
+      DOM.playersContainer.children[index],
+    );
+  } else {
+    DOM.playersContainer.appendChild(playerDiv);
+  }
+
+  // Render React player into the wrapper
+  const ReactDomClient = deps["react-dom/client"] || deps["react-dom"];
+  const createRoot =
+    ReactDomClient.createRoot || ReactDomClient.unstable_createRoot;
+
+  if (createRoot) {
+    const root = createRoot(playerWrapper);
+    root.render(
+      React.createElement(Player, {
+        component: scene.component,
+        durationInFrames: playerOptions.durationInFrames,
+        fps: playerOptions.fps,
+        compositionWidth: playerOptions.compositionWidth,
+        compositionHeight: playerOptions.compositionHeight,
+        controls: playerOptions.controls,
+        loop: playerOptions.loop,
+        autoPlay: playerOptions.autoPlay,
+        acknowledgeRemotionLicense: true,
+        style: { width: "100%" },
+      }),
+    );
+  } else if (ReactDomClient.render) {
+    ReactDomClient.render(
+      React.createElement(Player, {
+        component: scene.component,
+        durationInFrames: playerOptions.durationInFrames,
+        fps: playerOptions.fps,
+        compositionWidth: playerOptions.compositionWidth,
+        compositionHeight: playerOptions.compositionHeight,
+        controls: playerOptions.controls,
+        loop: playerOptions.loop,
+        autoPlay: playerOptions.autoPlay,
+        acknowledgeRemotionLicense: true,
+        style: { width: "100%" },
+      }),
+      playerWrapper,
+    );
+  }
+
+  // Apply position
+  const position = playerPositions[index];
+  if (position) {
+    playerDiv.style.position = "absolute";
+    playerDiv.style.top = `${position.topOffset}px`;
+    playerDiv.style.left = "12px";
+    playerDiv.style.right = "12px";
+  }
+}
+
+/**
  * Apply positions to existing player DOM elements
  * Called after render and on reflow to update positions
  */
 function repositionPlayers(): void {
-  const playersContainer = document.getElementById("players-container")!;
-
-  const playerElements = Array.from(playersContainer.children) as HTMLElement[];
+  const playerElements = Array.from(
+    DOM.playersContainer.children,
+  ) as HTMLElement[];
 
   playerElements.forEach((element, index) => {
     const position = playerPositions[index];
@@ -303,22 +483,18 @@ function repositionPlayers(): void {
 }
 
 function renderBandPlayerLinks(): void {
-  const overlay = document.getElementById(
-    "link-overlay",
-  ) as SVGSVGElement | null;
-  if (!overlay) return;
-
-  overlay.innerHTML = "";
+  DOM.linkOverlay.innerHTML = "";
 
   if (currentBands.length === 0 || playerPositions.length === 0) return;
 
-  const count = Math.min(currentBands.length, playerPositions.length);
   const bandLeft = 0;
   const playerLeft = 12;
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < currentBands.length; i++) {
     const band = currentBands[i];
     const player = playerPositions[i];
+
+    if (!band || !player) continue;
 
     const bandTop = band.topOffset - currentBandScrollTop;
     const bandBottom = bandTop + band.height;
@@ -335,42 +511,41 @@ function renderBandPlayerLinks(): void {
     polygon.setAttribute("stroke", "rgba(59, 130, 246, 0.35)");
     polygon.setAttribute("stroke-width", "1");
 
-    overlay.appendChild(polygon);
+    DOM.linkOverlay.appendChild(polygon);
   }
 }
 
-function renderPreviewBands(previewLocations: PixelBand[]): void {
-  const bandsContainer = document.getElementById("bands-container");
-  if (!bandsContainer) return;
-
+function renderPreviewBands(previewLocations: (PixelBand | null)[]): void {
   // Clear existing bands
-  bandsContainer.innerHTML = "";
+  DOM.bandsContainer.innerHTML = "";
 
   // Only show bands if we have preview locations and types passed
   if (!previewLocations || previewLocations.length === 0) return;
 
-  // Create a band for each preview() call
+  // Create a band for each preview() call (skip nulls)
   previewLocations.forEach((loc) => {
+    if (!loc) return; // Skip null bands (spans outside viewport)
+
     const band = document.createElement("div");
     band.className = "preview-band";
 
     band.style.top = loc.topOffset + "px";
     band.style.height = loc.height + "px";
 
-    bandsContainer.appendChild(band);
+    DOM.bandsContainer.appendChild(band);
   });
 }
 
 function renderError(errorMessage: string, errorStack: string): void {
   // Remove any existing error overlay first
-  const existingOverlay = document.getElementById("error-overlay");
-  if (existingOverlay) {
-    existingOverlay.remove();
+  if (DOM.errorOverlay) {
+    DOM.errorOverlay.remove();
   }
 
   // Create error overlay that sits on top of existing content
   const overlay = document.createElement("div");
   overlay.id = "error-overlay";
+  DOM.errorOverlay = overlay;
   overlay.style.cssText = `
         position: fixed;
         top: 0;
@@ -404,9 +579,9 @@ function renderError(errorMessage: string, errorStack: string): void {
 }
 
 function clearError(): void {
-  const existingOverlay = document.getElementById("error-overlay");
-  if (existingOverlay) {
-    existingOverlay.remove();
+  if (DOM.errorOverlay) {
+    DOM.errorOverlay.remove();
+    DOM.errorOverlay = null;
   }
 }
 
@@ -434,10 +609,8 @@ function loadBundle(code: string): void {
         sequence = { scenes };
       } else {
         // No previews - show empty state (clear content first)
-        const playersEl = document.getElementById("players-container");
-        if (playersEl) {
-          playersEl.innerHTML = "";
-        }
+        DOM.playersContainer.innerHTML = "";
+        currentSequence = null;
         renderEmptyState();
         clearError();
         hideLoadingScreen();
@@ -445,10 +618,22 @@ function loadBundle(code: string): void {
       }
     }
 
-    // Success - clear any error overlay and render players
+    // Store sequence for later rendering when bands exist
+    currentSequence = sequence;
+
+    // Success - clear any error overlay
     clearError();
     hideLoadingScreen();
-    renderPlayers(sequence);
+
+    // Only render players if we have bands (spans in viewport)
+    if (currentBands.length > 0) {
+      renderPlayers(sequence);
+      hasRenderedPlayers = true;
+    } else {
+      console.log(
+        "[Iframe] Bundle loaded but no bands in viewport, deferring render",
+      );
+    }
   } catch (err) {
     const message =
       err && (err as any).message ? (err as any).message : String(err);

@@ -1,7 +1,8 @@
 import type { MarkdownView } from "obsidian";
 import { EditorView, Decoration } from "@codemirror/view";
 import { StateEffect, StateField, type Extension } from "@codemirror/state";
-import type { MarkdownDiagnostic } from "remotion-md";
+import type { MarkdownDiagnostic, PreviewSpan } from "remotion-md";
+import type { PixelBand } from "./scroll";
 
 /**
  * Editor Integration Module
@@ -10,6 +11,7 @@ import type { MarkdownDiagnostic } from "remotion-md";
  * - EditorView access from Obsidian MarkdownView
  * - Diagnostic decorations and visualization
  * - Editor state management
+ * - Viewport measurements and coordinate conversion
  */
 
 // ============================================================================
@@ -127,4 +129,35 @@ export function clearEditorDiagnostics(view: EditorView) {
   view.dispatch({
     effects,
   });
+}
+
+// ============================================================================
+// Viewport Measurements
+// ============================================================================
+
+/**
+ * Convert a semantic span to a pixel band using CodeMirror coordinates
+ * Returns null if the span is completely outside the viewport
+ * Uses document coordinates (not viewport relative)
+ */
+export function toPixelBand(
+  span: PreviewSpan,
+  editorView: EditorView,
+): PixelBand | null {
+  const spanStart = span.pos ?? 0;
+  const spanEnd = spanStart + (span.length || 0);
+
+  const startCoords = editorView.coordsAtPos(spanStart);
+  const endCoords = editorView.coordsAtPos(spanEnd);
+
+  // Only return a band if we can get actual coordinates (span is in viewport)
+  if (startCoords && endCoords) {
+    const height = endCoords.bottom - startCoords.top;
+    // Document coordinates = scroll position + viewport-relative position
+    const topOffset = startCoords.top;
+    return { topOffset, height };
+  }
+
+  // Span is outside viewport
+  return null;
 }

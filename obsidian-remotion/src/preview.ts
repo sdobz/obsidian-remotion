@@ -30,9 +30,10 @@ export type IframeCommand =
   | {
       type: "reflow";
       bandScrollHeight: number;
-      bands: PixelBand[];
+      bands: (PixelBand | null)[];
       playerScrollHeight: number;
-      players: PixelBand[];
+      players: (PixelBand | null)[];
+      editorOffsetTop?: number;
     }
   | {
       type: "bundle";
@@ -125,6 +126,7 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       bands,
       playerScrollHeight,
       players,
+      editorOffsetTop: this.scrollManager?.getScrollDOMOffset(),
     };
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
