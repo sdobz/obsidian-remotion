@@ -47,13 +47,13 @@
             width: 100%;
         }
 
-        #players > div {
+        #players-container > div {
             position: absolute;
             padding: 8px;
             border-radius: 4px;
         }
 
-        #players > div > .player-wrapper {
+        #players-container > div > .player-wrapper {
             position: relative;
             width: 100%;
             background-color: #1a1a1a;
@@ -67,7 +67,7 @@
             background-position: 0 0, 0 12px, 12px -12px, -12px 0px;
         }
 
-        #players > div > .player-wrapper > * {
+        #players-container > div > .player-wrapper > * {
             width: 100%;
         }
 
@@ -104,10 +104,10 @@
         <div class="loading-spinner">⏳</div>
     </div>
     <div class="scroller" id="bands-scroller">
-        <div class="scrollee" id="bands-wrapper"></div>
+        <div class="scrollee" id="bands-container"></div>
     </div>
     <div class="scroller" id="players-scroller">
-        <div class="scrollee" id="players-wrapper"></div>
+        <div class="scrollee" id="players-container"></div>
     </div>
     <svg id="link-overlay"></svg>
     <script>__IFRAME_SCRIPT__</script>

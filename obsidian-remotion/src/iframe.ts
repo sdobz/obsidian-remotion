@@ -72,11 +72,11 @@ function resetPanel() {
   }
 
   // Clear all state
-  const playersEl = document.getElementById("players-wrapper");
+  const playersEl = document.getElementById("players-container");
   if (playersEl) {
     playersEl.innerHTML = "";
   }
-  const bandsEl = document.getElementById("bands-wrapper");
+  const bandsEl = document.getElementById("bands-container");
   if (bandsEl) {
     bandsEl.innerHTML = "";
   }
@@ -111,10 +111,10 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
   currentBands = cmd.bands;
 
   // Set preview bands container height to match editor scroll height
-  document.getElementById("bands-wrapper")!.style.height =
+  document.getElementById("bands-container")!.style.height =
     cmd.bandScrollHeight + "px";
   // Set players container height accounting for overlaps
-  document.getElementById("players-wrapper")!.style.height =
+  document.getElementById("players-container")!.style.height =
     cmd.playerScrollHeight + "px";
 
   renderPreviewBands(cmd.bands);
@@ -154,7 +154,7 @@ function renderEmptyState(): void {
     __root = null;
   }
 
-  const playersEl = document.getElementById("players-wrapper")!;
+  const playersEl = document.getElementById("players-container")!;
 
   playersEl.innerHTML = `
         <div style="
@@ -186,7 +186,7 @@ function renderPlayers(sequence: Sequence): void {
     (PlayerModule && PlayerModule.default) ||
     PlayerModule;
   const ReactDomClient = deps["react-dom/client"] || deps["react-dom"];
-  const playersEl = document.getElementById("players-wrapper")!;
+  const playersEl = document.getElementById("players-container")!;
 
   if (!React || !ReactDomClient || !Player) {
     throw new Error("Missing React, ReactDOM, or @remotion/player");
@@ -262,7 +262,7 @@ function renderPlayers(sequence: Sequence): void {
   // Notify parent that players have been rendered with their dimensions
   setTimeout(() => {
     console.log("[iframe] Sending player-status message");
-    const playersContainer = document.getElementById("players-wrapper");
+    const playersContainer = document.getElementById("players-container");
     const playerElements = playersContainer
       ? Array.from(playersContainer.children)
       : [];
@@ -284,7 +284,7 @@ function renderPlayers(sequence: Sequence): void {
  * Called after render and on reflow to update positions
  */
 function repositionPlayers(): void {
-  const playersContainer = document.getElementById("players-wrapper")!;
+  const playersContainer = document.getElementById("players-container")!;
 
   const playerElements = Array.from(playersContainer.children) as HTMLElement[];
 
@@ -337,7 +337,7 @@ function renderBandPlayerLinks(): void {
 }
 
 function renderPreviewBands(previewLocations: PixelBand[]): void {
-  const bandsContainer = document.getElementById("bands-wrapper");
+  const bandsContainer = document.getElementById("bands-container");
   if (!bandsContainer) return;
 
   // Clear existing bands
@@ -431,7 +431,7 @@ function loadBundle(code: string): void {
         sequence = { scenes };
       } else {
         // No previews - show empty state (clear content first)
-        const playersEl = document.getElementById("players-wrapper");
+        const playersEl = document.getElementById("players-container");
         if (playersEl) {
           playersEl.innerHTML = "";
         }
