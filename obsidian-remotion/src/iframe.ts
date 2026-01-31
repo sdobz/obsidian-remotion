@@ -125,7 +125,7 @@ function handleScroll(cmd: IframeCommand & { type: "scroll" }) {
   // Scroll players container using matching algorithm
   document.getElementById("players-scroller")!.scrollTop = cmd.playerScrollTop;
 
-  console.log("Player scroll top:", cmd.playerScrollTop);
+  console.log("Scroll delta:", cmd.playerScrollTop - cmd.bandScrollTop);
 }
 
 function renderEmptyState(): void {

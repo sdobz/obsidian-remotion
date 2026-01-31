@@ -257,7 +257,7 @@ export class ScrollManager {
    * Find the active player index - the one closest to the viewport center
    */
   private findActivePlayerIndex(bands: PixelBand[]): number {
-    const viewportCenter = this.container.clientHeight / 2;
+    const viewportCenter = this.scrollTop + this.container.clientHeight / 2;
 
     let activeIndex = 0;
     let closestDistance = Number.POSITIVE_INFINITY;
@@ -277,23 +277,29 @@ export class ScrollManager {
 
   /**
    * Compute player scroll position using matching algorithm:
-   * Match the vertical center of the active player with the vertical center
-   * of the corresponding preview band
+   * 1. Identify the active preview span (closest to viewport center)
+   * 2. Scroll players such that the active player's center aligns with the active band's center on screen
    */
   private computePlayerScrollTop(activePlayerIndex: number): number {
     if (
+      this.currentBands.length === 0 ||
       this.currentPlayerPositions.length === 0 ||
-      activePlayerIndex >= this.currentPlayerPositions.length
+      activePlayerIndex >= this.currentBands.length
     ) {
       return 0;
     }
 
-    const viewportCenter = this.container.clientHeight / 2;
+    const activeBand = this.currentBands[activePlayerIndex];
     const activePlayer = this.currentPlayerPositions[activePlayerIndex];
-    const playerCenter = activePlayer.topOffset + activePlayer.height / 2;
 
-    // Scroll to center the active player's center at the viewport center
-    const playerScrollTop = Math.max(0, playerCenter - viewportCenter);
+    // Calculate offset between player and band centers
+    const bandCenter = activeBand.topOffset + activeBand.height / 2;
+    const playerCenter = activePlayer.topOffset + activePlayer.height / 2;
+    const centerOffset = playerCenter - bandCenter;
+
+    // Player scroll top = preview scroll top + center offset
+    // This aligns the player center with the band center on screen
+    const playerScrollTop = Math.max(0, this.scrollTop + centerOffset);
 
     return playerScrollTop;
   }
