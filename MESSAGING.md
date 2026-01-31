@@ -19,7 +19,7 @@ When the editor first opens or the preview is activated:
 
 - **Message: `reflow`** → Iframe sends initial viewport dimensions and preview bands
   - `editorHeight`: Height of editor content
-  - `iframeHeight`: Total iframe viewport height
+  - `bandScrollHeight`: Total iframe viewport height
   - `bands`: Array of pixel band positions (where preview() calls appear)
 
 ### 2. Types Check / Code Updates
@@ -84,7 +84,7 @@ type IframeCommand =
   | {
       type: "reflow";
       editorHeight: number;
-      iframeHeight: number;
+      bandScrollHeight: number;
       bands: Array<{ topOffset: number; height: number }>;
     }
   | {

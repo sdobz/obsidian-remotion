@@ -18,7 +18,7 @@ type Sequence = {
 
 // State management
 let hasContent = false;
-let positions: PixelBand[] = [];
+let playerPositions: PixelBand[] = [];
 
 // Module registry for require polyfill
 const __modules__: Record<string, unknown> = {};
@@ -69,11 +69,11 @@ function resetPanel() {
   }
 
   // Clear all state
-  const playersEl = document.getElementById("players");
+  const playersEl = document.getElementById("players-wrapper");
   if (playersEl) {
     playersEl.innerHTML = "";
   }
-  const bandsEl = document.getElementById("preview-bands");
+  const bandsEl = document.getElementById("bands-wrapper");
   if (bandsEl) {
     bandsEl.innerHTML = "";
   }
@@ -87,14 +87,28 @@ function resetPanel() {
 }
 
 function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
-  // Update viewport dimensions and preview bands
+  // Update viewport dimensions for preview bands and players containers
   console.log("[iframe] Reflow:", {
-    iframeHeight: cmd.iframeHeight,
-    bandCount: cmd.bands.length,
+    previewHeight: cmd.bandScrollHeight,
+    bands: cmd.bands,
+    playerScrollHeight: cmd.playerScrollHeight,
+    players: cmd.players,
   });
-  document.body.style.height = cmd.iframeHeight + "px";
+
+  // Store player positions for rendering
+  playerPositions = cmd.players;
+
+  // Set preview bands container height to match editor scroll height
+  document.getElementById("bands-wrapper")!.style.height =
+    cmd.bandScrollHeight + "px";
+  // Set players container height accounting for overlaps
+  document.getElementById("players-wrapper")!.style.height =
+    cmd.playerScrollHeight + "px";
 
   renderPreviewBands(cmd.bands);
+
+  // Reposition any existing players with new positions
+  repositionPlayers();
 }
 
 function handleBundle(cmd: IframeCommand & { type: "bundle" }) {
@@ -105,34 +119,13 @@ function handleBundle(cmd: IframeCommand & { type: "bundle" }) {
 }
 
 function handleScroll(cmd: IframeCommand & { type: "scroll" }) {
-  // Update scroll position and player positions
-  if (typeof cmd.scrollTop === "number") {
-    window.scrollTo({ top: cmd.scrollTop, behavior: "instant" });
-  }
-  // Position players
-  positionPlayers(cmd.positions);
-}
+  // Scroll preview bands container to match editor scroll
+  document.getElementById("bands-scroller")!.scrollTop = cmd.bandScrollTop;
 
-/**
- * Position player DOM elements according to calculated positions
- */
-function positionPlayers(newPositions: PixelBand[]): void {
-  const playersContainer = document.getElementById("players");
-  if (!playersContainer) return;
+  // Scroll players container using matching algorithm
+  document.getElementById("players-scroller")!.scrollTop = cmd.playerScrollTop;
 
-  const playerElements = Array.from(playersContainer.children) as HTMLElement[];
-  positions = newPositions;
-
-  positions.forEach((pos, index) => {
-    const element = playerElements[index];
-    if (element) {
-      element.style.position = "absolute";
-      element.style.top = `${Math.max(0, pos.topOffset)}px`;
-      element.style.left = "0";
-      element.style.right = "0";
-      // element.style.height = `${pos.height}px`;
-    }
-  });
+  console.log("Player scroll top:", cmd.playerScrollTop);
 }
 
 function renderEmptyState(): void {
@@ -146,8 +139,7 @@ function renderEmptyState(): void {
     __root = null;
   }
 
-  const playersEl = document.getElementById("players");
-  if (!playersEl) return;
+  const playersEl = document.getElementById("players-wrapper")!;
 
   playersEl.innerHTML = `
         <div style="
@@ -179,9 +171,9 @@ function renderPlayers(sequence: Sequence): void {
     (PlayerModule && PlayerModule.default) ||
     PlayerModule;
   const ReactDomClient = deps["react-dom/client"] || deps["react-dom"];
-  const playersEl = document.getElementById("players");
+  const playersEl = document.getElementById("players-wrapper")!;
 
-  if (!React || !ReactDomClient || !Player || !playersEl) {
+  if (!React || !ReactDomClient || !Player) {
     throw new Error("Missing React, ReactDOM, or @remotion/player");
   }
 
@@ -204,11 +196,8 @@ function renderPlayers(sequence: Sequence): void {
 
   const scenes = (sequence && sequence.scenes) || [];
 
-  // Use preview locations as position anchors
-  // Each preview() call in the source maps to a component to display
-
+  // Render players - positions will be applied by repositionPlayers()
   const nodes = scenes.map((scene: Scene, idx: number) => {
-    const loc = positions[idx];
     // Merge scene options with defaults
     const playerOptions = scene.options
       ? { ...DEFAULT_OPTIONS, ...scene.options }
@@ -250,12 +239,15 @@ function renderPlayers(sequence: Sequence): void {
     );
   }
 
+  // After render, ensure players have correct positions
+  repositionPlayers();
+
   console.log("[iframe] Players rendered, notifying parent in 100ms");
 
   // Notify parent that players have been rendered with their dimensions
   setTimeout(() => {
     console.log("[iframe] Sending player-status message");
-    const playersContainer = document.getElementById("players");
+    const playersContainer = document.getElementById("players-wrapper");
     const playerElements = playersContainer
       ? Array.from(playersContainer.children)
       : [];
@@ -272,10 +264,28 @@ function renderPlayers(sequence: Sequence): void {
   }, 100);
 }
 
-function updateScrollHeight(height: number): void {}
+/**
+ * Apply positions to existing player DOM elements
+ * Called after render and on reflow to update positions
+ */
+function repositionPlayers(): void {
+  const playersContainer = document.getElementById("players-wrapper")!;
+
+  const playerElements = Array.from(playersContainer.children) as HTMLElement[];
+
+  playerElements.forEach((element, index) => {
+    const position = playerPositions[index];
+    if (position) {
+      element.style.position = "absolute";
+      element.style.top = `${position.topOffset}px`;
+      element.style.left = "12px";
+      element.style.right = "12px";
+    }
+  });
+}
 
 function renderPreviewBands(previewLocations: PixelBand[]): void {
-  const bandsContainer = document.getElementById("preview-bands");
+  const bandsContainer = document.getElementById("bands-wrapper");
   if (!bandsContainer) return;
 
   // Clear existing bands
@@ -286,8 +296,6 @@ function renderPreviewBands(previewLocations: PixelBand[]): void {
 
   // Create a band for each preview() call
   previewLocations.forEach((loc) => {
-    if (typeof loc.topOffset !== "number") return;
-
     const band = document.createElement("div");
     band.className = "preview-band";
 
@@ -299,10 +307,6 @@ function renderPreviewBands(previewLocations: PixelBand[]): void {
 }
 
 function renderError(errorMessage: string, errorStack: string): void {
-  // Show error overlay without clearing existing players
-  const playersEl = document.getElementById("players");
-  if (!playersEl) return;
-
   // Remove any existing error overlay first
   const existingOverlay = document.getElementById("error-overlay");
   if (existingOverlay) {
@@ -375,7 +379,7 @@ function loadBundle(code: string): void {
         sequence = { scenes };
       } else {
         // No previews - show empty state (clear content first)
-        const playersEl = document.getElementById("players");
+        const playersEl = document.getElementById("players-wrapper");
         if (playersEl) {
           playersEl.innerHTML = "";
         }

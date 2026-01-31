@@ -29,8 +29,10 @@ export type IframeCommand =
     }
   | {
       type: "reflow";
-      iframeHeight: number;
+      bandScrollHeight: number;
       bands: PixelBand[];
+      playerScrollHeight: number;
+      players: PixelBand[];
     }
   | {
       type: "bundle";
@@ -38,8 +40,8 @@ export type IframeCommand =
     }
   | {
       type: "scroll";
-      scrollTop: number;
-      positions: PixelBand[];
+      bandScrollTop: number;
+      playerScrollTop: number;
     };
 
 export class PreviewView extends ItemView implements ScrollDelegate {
@@ -111,25 +113,31 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.scrollManager = scrollManager;
   }
 
-  onReflow(iframeHeight: number, bands: PixelBand[]): void {
+  onReflow(
+    bandScrollHeight: number,
+    bands: PixelBand[],
+    playerScrollHeight: number,
+    players: PixelBand[],
+  ): void {
     if (!this.iframe?.contentWindow) return;
 
     const cmd: IframeCommand = {
       type: "reflow",
-      iframeHeight,
+      bandScrollHeight,
       bands,
+      playerScrollHeight,
+      players,
     };
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  onScroll(scrollTop: number, positions: PixelBand[]): void {
+  onScroll(previewScrollTop: number, playerScrollTop: number): void {
     if (!this.iframe?.contentWindow) return;
 
-    // Send scroll message to iframe with positions and scrollTop
     const cmd: IframeCommand = {
       type: "scroll",
-      scrollTop,
-      positions,
+      bandScrollTop: previewScrollTop,
+      playerScrollTop,
     };
     this.iframe.contentWindow.postMessage(cmd, "*");
   }

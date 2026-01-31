@@ -3,6 +3,7 @@ import type { PreviewSpan } from "remotion-md";
 
 export interface PixelBand {
   topOffset: number;
+  outOfViewport?: boolean;
   height: number;
 }
 
@@ -10,8 +11,13 @@ export interface PixelBand {
  * Delegate interface for ScrollManager to communicate viewport, bands, and positions
  */
 export interface ScrollDelegate {
-  onReflow(iframeHeight: number, bands: PixelBand[]): void;
-  onScroll(scrollTop: number, positions: PixelBand[]): void;
+  onReflow(
+    previewHeight: number,
+    bands: PixelBand[],
+    playerScrollHeight: number,
+    players: PixelBand[],
+  ): void;
+  onScroll(previewScrollTop: number, playerScrollTop: number): void;
 }
 
 // ============================================================================
@@ -27,6 +33,7 @@ export class ScrollManager {
   private resizeObserver: ResizeObserver | null = null;
   private currentSpans: PreviewSpan[] = [];
   private currentBands: PixelBand[] = [];
+  private currentPlayerPositions: PixelBand[] = [];
   private currentPlayerHeights: number[] = [];
   private scrollListener: (() => void) | null = null;
 
@@ -36,7 +43,6 @@ export class ScrollManager {
     private editorView: EditorView,
     private delegate: ScrollDelegate,
   ) {
-    console.log(this.scrollDOM);
     this.setupScrollListener();
     this.setupResizeObserver();
   }
@@ -62,11 +68,23 @@ export class ScrollManager {
    * Recalculate bands and notify delegate of reflow event
    */
   private handleReflow(): void {
-    console.log(`[Scroll] Editor reflow: iframeHeight=${this.scrollHeight}`);
+    console.log(`[Scroll] Editor reflow: previewHeight=${this.scrollHeight}`);
 
     this.currentBands = this.convertToBands(this.currentSpans);
+    this.currentPlayerPositions = this.calculatePlayerPositions(
+      this.currentBands,
+      this.currentPlayerHeights,
+    );
+    const playerScrollHeight = this.computePlayerScrollHeight(
+      this.currentPlayerPositions,
+    );
 
-    this.delegate.onReflow(this.scrollHeight, this.currentBands);
+    this.delegate.onReflow(
+      this.scrollHeight,
+      this.currentBands,
+      playerScrollHeight,
+      this.currentPlayerPositions,
+    );
     this.handleScroll();
   }
 
@@ -76,20 +94,17 @@ export class ScrollManager {
   handlePlayerHeights(playerHeights: number[]): void {
     this.currentPlayerHeights = playerHeights;
 
-    this.handleScroll();
+    this.handleReflow();
   }
 
   /**
    * Notify delegate of scroll position and player positions
    */
   private handleScroll(): void {
-    this.delegate.onScroll(
-      this.scrollTop,
-      this.calculatePlayerPositions(
-        this.currentBands,
-        this.currentPlayerHeights,
-      ),
-    );
+    const activePlayerIndex = this.findActivePlayerIndex(this.currentBands);
+    const playerScrollTop = this.computePlayerScrollTop(activePlayerIndex);
+
+    this.delegate.onScroll(this.scrollTop, playerScrollTop);
   }
 
   /**
@@ -97,7 +112,11 @@ export class ScrollManager {
    */
   private setupScrollListener(): void {
     this.scrollListener = () => {
-      this.handleScroll();
+      if (this.currentBands.some((band) => band.outOfViewport)) {
+        this.handleReflow();
+      } else {
+        this.handleScroll();
+      }
     };
     this.handleScroll();
     this.scrollDOM.addEventListener("scroll", this.scrollListener);
@@ -142,19 +161,31 @@ export class ScrollManager {
   /**
    * Convert semantic spans to pixel bands using viewport state
    * Uses span.pos and span.length to calculate full span height
+   *
+   * If a span is outside the viewport, coordsAtPos() returns null.
+   * In this case, we position it at the bottom and it will be updated
+   * once the user scrolls it into view.
    */
   private convertToBands(spans: PreviewSpan[]): PixelBand[] {
     const scrollOffset = this.getScrollOffset();
 
-    return spans.map((span) => {
-      const startCoords = this.editorView.coordsAtPos(span.pos);
-      const endCoords = this.editorView.coordsAtPos(
-        span.pos + (span.length || 0),
-      );
+    return spans.map((span, index) => {
+      const spanStart = span.pos ?? 0;
+      const spanEnd = spanStart + (span.length || 0);
 
+      const startCoords = this.editorView.coordsAtPos(spanStart);
+      const endCoords = this.editorView.coordsAtPos(spanEnd);
+
+      // If coords are null, span is outside viewport - position at bottom for now
       if (!startCoords || !endCoords) {
-        console.error("[Scroll] Failed to get coords for span:", span);
-        return { topOffset: 0, height: 0 };
+        console.log(
+          `[Scroll] Span ${index} (pos=${spanStart}, len=${span.length}): off-viewport, positioning at bottom until scrolled into view`,
+        );
+        return {
+          topOffset: this.scrollHeight + scrollOffset,
+          outOfViewport: true,
+          height: 400, // default player height
+        };
       }
 
       const height = endCoords.bottom - startCoords.top;
@@ -165,60 +196,105 @@ export class ScrollManager {
   }
 
   /**
-   * Calculate player positions with collision detection
+   * Calculate player positions by de-overlapping players
+   * Start each player at its band position, then step down any that overlap
    */
   private calculatePlayerPositions(
     bands: PixelBand[],
     playerHeights: number[],
   ): PixelBand[] {
     const defaultHeight = 400;
-    const viewportCenter = this.container.clientHeight / 2;
+    const margin = 16;
+    let overlapOffset = 0;
 
-    // Find the middle span closest to the viewport center
-    let middleIndex = 0;
-    if (bands.length > 0) {
-      let closestDistance = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < bands.length; i++) {
-        const band = bands[i];
-        const bandCenter = band.topOffset + band.height / 2;
-        const distance = Math.abs(bandCenter - viewportCenter);
-        if (distance < closestDistance) {
-          closestDistance = distance;
-          middleIndex = i;
+    const positions: PixelBand[] = bands.map((band, i) => ({
+      topOffset: band.topOffset,
+      height: playerHeights[i] ?? defaultHeight,
+    }));
+
+    // Check each player for overlap with previous and adjust if needed
+    for (let i = 1; i < positions.length; i++) {
+      const prev = positions[i - 1];
+      const curr = positions[i];
+
+      const prevBottom = prev.topOffset + prev.height + margin;
+      const overlap = prevBottom - curr.topOffset;
+
+      if (overlap > 0) {
+        // Add overlap to offset
+        overlapOffset += overlap;
+
+        // Step this and all following players down by the accumulated offset
+        for (let j = i; j < positions.length; j++) {
+          positions[j].topOffset += overlapOffset;
         }
       }
     }
 
-    const newPositions: PixelBand[] = [];
+    return positions;
+  }
 
-    // Push players upward from the middle span
-    for (let i = Math.min(middleIndex, bands.length - 1); i >= 0; i--) {
+  /**
+   * Compute player container height as bandScrollHeight + overlap offset
+   * The overlap offset is computed during calculatePlayerPositions
+   */
+  private computePlayerScrollHeight(playerPositions: PixelBand[]): number {
+    if (playerPositions.length === 0) return this.scrollHeight;
+
+    // Find the total offset added to avoid overlaps
+    // This is the difference between the last player's position and its band
+    const lastPlayerIndex = playerPositions.length - 1;
+    const lastBand = this.currentBands[lastPlayerIndex];
+    const lastPlayer = playerPositions[lastPlayerIndex];
+
+    if (!lastBand) return this.scrollHeight;
+
+    const overlapOffset = lastPlayer.topOffset - lastBand.topOffset;
+    return this.scrollHeight + overlapOffset;
+  }
+
+  /**
+   * Find the active player index - the one closest to the viewport center
+   */
+  private findActivePlayerIndex(bands: PixelBand[]): number {
+    const viewportCenter = this.container.clientHeight / 2;
+
+    let activeIndex = 0;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    for (let i = 0; i < bands.length; i++) {
       const band = bands[i];
-      if (i === middleIndex) {
-        newPositions.push({
-          topOffset: band.topOffset,
-          height: playerHeights[i] ?? defaultHeight,
-        });
-      } else {
-        const previousBand = newPositions[newPositions.length - 1];
-        const newOffset = previousBand.topOffset - (band.height + 16); // 16 is the margin
-        newPositions.push({
-          topOffset: newOffset,
-          height: playerHeights[i] ?? defaultHeight,
-        });
+      const bandCenter = band.topOffset + band.height / 2;
+      const distance = Math.abs(bandCenter - viewportCenter);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        activeIndex = i;
       }
     }
 
-    // Push players downward from the middle span
-    for (let i = middleIndex + 1; i < bands.length; i++) {
-      const previousBand = newPositions[newPositions.length - 1];
-      const newOffset = previousBand.topOffset + (previousBand.height + 16); // 16 is the margin
-      newPositions.push({
-        topOffset: newOffset,
-        height: playerHeights[i] ?? defaultHeight,
-      });
+    return activeIndex;
+  }
+
+  /**
+   * Compute player scroll position using matching algorithm:
+   * Match the vertical center of the active player with the vertical center
+   * of the corresponding preview band
+   */
+  private computePlayerScrollTop(activePlayerIndex: number): number {
+    if (
+      this.currentPlayerPositions.length === 0 ||
+      activePlayerIndex >= this.currentPlayerPositions.length
+    ) {
+      return 0;
     }
 
-    return newPositions;
+    const viewportCenter = this.container.clientHeight / 2;
+    const activePlayer = this.currentPlayerPositions[activePlayerIndex];
+    const playerCenter = activePlayer.topOffset + activePlayer.height / 2;
+
+    // Scroll to center the active player's center at the viewport center
+    const playerScrollTop = Math.max(0, playerCenter - viewportCenter);
+
+    return playerScrollTop;
   }
 }
