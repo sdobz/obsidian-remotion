@@ -36,7 +36,7 @@ const First= preview(
 )
 
 const Second = preview(
-	() => <Title>Another Title</Title>
+	() => <Title>Another Title?</Title>
 )
 
 export default preview(() => <Series>

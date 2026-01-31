@@ -8,6 +8,16 @@ export interface PixelBand {
 }
 
 /**
+ * Metadata for tracking approximations in bands
+ */
+interface BandMetadata {
+  topOffsetApproximated: boolean;
+  heightApproximated: boolean;
+  spanStart: number;
+  spanEnd: number;
+}
+
+/**
  * Delegate interface for ScrollManager to communicate viewport, bands, and positions
  */
 export interface ScrollDelegate {
@@ -33,6 +43,7 @@ export class ScrollManager {
   private resizeObserver: ResizeObserver | null = null;
   private currentSpans: PreviewSpan[] = [];
   private currentBands: PixelBand[] = [];
+  private bandMetadata: BandMetadata[] = [];
   private currentPlayerPositions: PixelBand[] = [];
   private currentPlayerHeights: number[] = [];
   private scrollListener: (() => void) | null = null;
@@ -68,8 +79,6 @@ export class ScrollManager {
    * Recalculate bands and notify delegate of reflow event
    */
   private handleReflow(): void {
-    console.log(`[Scroll] Editor reflow: previewHeight=${this.scrollHeight}`);
-
     this.currentBands = this.convertToBands(this.currentSpans);
     this.currentPlayerPositions = this.calculatePlayerPositions(
       this.currentBands,
@@ -101,7 +110,11 @@ export class ScrollManager {
    * Notify delegate of scroll position and player positions
    */
   private handleScroll(): void {
+    // Try to resolve any remaining approximations
+    this.resolveApproximations();
+
     const activeWeight = this.findActiveWeight(this.currentBands);
+    console.log(`[Scroll] Active weight: ${activeWeight}`);
     const playerScrollTop = this.computePlayerScrollTop(activeWeight);
 
     this.delegate.onScroll(this.scrollTop, playerScrollTop);
@@ -160,14 +173,12 @@ export class ScrollManager {
 
   /**
    * Convert semantic spans to pixel bands using viewport state
-   * Uses span.pos and span.length to calculate full span height
-   *
-   * If a span is outside the viewport, coordsAtPos() returns null.
-   * In this case, we position it at the bottom and it will be updated
-   * once the user scrolls it into view.
+   * Attempts to get real coordinates, falls back to approximations if outside viewport
+   * Tracks which values are approximated so they can be resolved later
    */
   private convertToBands(spans: PreviewSpan[]): PixelBand[] {
     const scrollOffset = this.getScrollOffset();
+    this.bandMetadata = [];
 
     return spans.map((span, index) => {
       const spanStart = span.pos ?? 0;
@@ -176,23 +187,135 @@ export class ScrollManager {
       const startCoords = this.editorView.coordsAtPos(spanStart);
       const endCoords = this.editorView.coordsAtPos(spanEnd);
 
-      // If coords are null, span is outside viewport - position at bottom for now
-      if (!startCoords || !endCoords) {
-        console.log(
-          `[Scroll] Span ${index} (pos=${spanStart}, len=${span.length}): off-viewport, positioning at bottom until scrolled into view`,
-        );
-        return {
-          topOffset: this.scrollHeight + scrollOffset,
-          outOfViewport: true,
-          height: 400, // default player height
-        };
+      // Try to get actual coordinates
+      if (startCoords && endCoords) {
+        const height = endCoords.bottom - startCoords.top;
+        const topOffset = startCoords.top + scrollOffset;
+
+        this.bandMetadata.push({
+          topOffsetApproximated: false,
+          heightApproximated: false,
+          spanStart,
+          spanEnd,
+        });
+
+        return { topOffset, height };
       }
 
-      const height = endCoords.bottom - startCoords.top;
-      const topOffset = startCoords.top + scrollOffset;
+      // Approximation: use line-based estimates from compiler
+      const approximation = this.approximateBandFromSpan(span, scrollOffset);
+      this.bandMetadata.push({
+        topOffsetApproximated: true,
+        heightApproximated: true,
+        spanStart,
+        spanEnd,
+      });
 
-      return { topOffset, height };
+      return approximation;
     });
+  }
+
+  /**
+   * Estimate band position and height based on document structure
+   * Uses span length to estimate lines, avoiding viewport-dependent lineAt
+   */
+  private approximateBandFromSpan(
+    span: PreviewSpan,
+    scrollOffset: number,
+  ): PixelBand {
+    // Use compiler's accurate line number (1-based) instead of character position
+    const lineNumber = span.line; // 1-based from compiler
+    const averageLineHeight = this.estimateAverageLineHeight();
+
+    // Position at the start of the line
+    const estimatedTopOffset =
+      (lineNumber - 1) * averageLineHeight + scrollOffset;
+
+    // Count newlines directly to determine line count (more efficient than split)
+    let numLines = 1;
+    if (span.text) {
+      for (let i = 0; i < span.text.length; i++) {
+        if (span.text[i] === "\n") numLines++;
+      }
+    }
+    const estimatedHeight = numLines * averageLineHeight;
+
+    console.log(
+      `[Scroll] Approximated band (line ${lineNumber}, ~${numLines} lines): height=${estimatedHeight}`,
+    );
+
+    return {
+      topOffset: estimatedTopOffset,
+      height: estimatedHeight,
+    };
+  }
+
+  /**
+   * Estimate average line height from visible lines
+   */
+  private estimateAverageLineHeight(): number {
+    try {
+      // Try to measure a visible line
+      const line = this.editorView.state.doc.line(1);
+      const coords = this.editorView.coordsAtPos(line.from);
+      if (coords) {
+        // Get height of first line
+        const nextLineCoords = this.editorView.coordsAtPos(
+          Math.min(line.to + 1, this.editorView.state.doc.length),
+        );
+        if (nextLineCoords) {
+          return Math.max(16, nextLineCoords.top - coords.top);
+        }
+      }
+    } catch (e) {
+      // Silently fall back to default
+    }
+    return 20; // Default estimate
+  }
+
+  /**
+   * Try to resolve any remaining approximations by re-polling coordsAtPos
+   */
+  private resolveApproximations(): void {
+    let anyResolved = false;
+    const scrollOffset = this.getScrollOffset();
+
+    for (let i = 0; i < this.bandMetadata.length; i++) {
+      const metadata = this.bandMetadata[i];
+      const band = this.currentBands[i];
+
+      if (!metadata || !band) continue;
+
+      // Try to resolve topOffset
+      if (metadata.topOffsetApproximated) {
+        const coords = this.editorView.coordsAtPos(metadata.spanStart);
+        if (coords) {
+          band.topOffset = coords.top + scrollOffset;
+          metadata.topOffsetApproximated = false;
+          anyResolved = true;
+        }
+      }
+
+      // Try to resolve height
+      if (metadata.heightApproximated) {
+        const startCoords = this.editorView.coordsAtPos(metadata.spanStart);
+        const endCoords = this.editorView.coordsAtPos(metadata.spanEnd);
+        if (startCoords && endCoords) {
+          band.height = endCoords.bottom - startCoords.top;
+          metadata.heightApproximated = false;
+          anyResolved = true;
+        }
+      }
+    }
+
+    if (anyResolved) {
+      console.log("[Scroll] Resolved some band approximations");
+      // Recalculate player positions with updated bands
+      this.currentPlayerPositions = this.calculatePlayerPositions(
+        this.currentBands,
+        this.currentPlayerHeights,
+      );
+    }
   }
 
   /**
@@ -254,8 +377,8 @@ export class ScrollManager {
   }
 
   /**
-   * Find the active weight - a float representing position between bands
-   * Returns index + fractional weight (0-1) based on distance to viewport center
+   * Find the active weight - a float index representing position between bands
+   * Returns index + fraction (e.g., 1.3 = 30% between band 1 and band 2)
    * Only blends if bands are within viewport height, otherwise snaps to nearest
    */
   private findActiveWeight(bands: PixelBand[]): number {
@@ -263,47 +386,50 @@ export class ScrollManager {
     if (bands.length === 1) return 0;
 
     const viewportCenter = this.scrollTop + this.container.clientHeight / 2;
-    const viewportHeight = this.container.clientHeight;
-    const blendDistance = viewportHeight; // Only blend within one screen height
 
-    // Find two closest bands
-    let closest1 = 0;
-    let closest2 = 0;
-    let distance1 = Number.POSITIVE_INFINITY;
-    let distance2 = Number.POSITIVE_INFINITY;
+    // Find which two sequential bands the viewport center is between
+    for (let i = 0; i < bands.length - 1; i++) {
+      const band1 = bands[i];
+      const band2 = bands[i + 1];
 
-    for (let i = 0; i < bands.length; i++) {
-      const band = bands[i];
-      const bandCenter = band.topOffset + band.height / 2;
-      const distance = Math.abs(bandCenter - viewportCenter);
+      const center1 = band1.topOffset + band1.height / 2;
+      const center2 = band2.topOffset + band2.height / 2;
 
-      if (distance < distance1) {
-        distance2 = distance1;
-        closest2 = closest1;
-        distance1 = distance;
-        closest1 = i;
-      } else if (distance < distance2) {
-        distance2 = distance;
-        closest2 = i;
+      // Check if viewport center is between these two band centers
+      if (viewportCenter >= center1 && viewportCenter <= center2) {
+        // Calculate fraction between the two bands
+        const totalDistance = center2 - center1;
+        const distanceFromFirst = viewportCenter - center1;
+        const fraction =
+          totalDistance > 0 ? distanceFromFirst / totalDistance : 0;
+        return i + fraction;
       }
     }
 
-    // If only one band is close or bands are too far apart, snap to closest
-    if (distance2 > blendDistance || distance1 + distance2 === 0) {
-      return closest1;
+    // Viewport center is outside all bands - snap to nearest
+    const firstCenter = bands[0].topOffset + bands[0].height / 2;
+    if (viewportCenter < firstCenter) {
+      return 0;
     }
 
-    // Calculate blend weight between the two closest bands
-    // weight closer to 0 = more of closest1, closer to 1 = more of closest2
-    const totalDistance = distance1 + distance2;
-    const weight = distance1 / totalDistance;
-
-    // Return interpolated position
-    if (closest1 < closest2) {
-      return closest1 + weight;
-    } else {
-      return closest2 + (1 - weight);
+    const lastCenter =
+      bands[bands.length - 1].topOffset + bands[bands.length - 1].height / 2;
+    if (viewportCenter > lastCenter) {
+      return bands.length - 1;
     }
+
+    // Fallback: find nearest band
+    let nearest = 0;
+    let minDistance = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < bands.length; i++) {
+      const center = bands[i].topOffset + bands[i].height / 2;
+      const distance = Math.abs(center - viewportCenter);
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearest = i;
+      }
+    }
+    return nearest;
   }
 
   /**

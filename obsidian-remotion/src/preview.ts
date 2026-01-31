@@ -56,7 +56,6 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       const stack = data.error?.stack ?? "";
       console.error("Remotion runtime error:", message, stack);
     } else if (data.type === "player-status") {
-      console.log("[Preview] Received player-status:", data.players);
       // Players have rendered, update their heights and replay positioning
       this.scrollManager?.handlePlayerHeights(
         data.players.map((p) => p.height),
@@ -81,7 +80,6 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass("remotion-preview-container");
-    console.log("[Preview] Opening Remotion Preview View");
 
     // Create iframe for Remotion runtime
     this.iframe = container.createEl("iframe", {
@@ -215,24 +213,6 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     if (!this.iframe?.contentWindow) return;
     const cmd: IframeCommand = { type: "reset" };
     this.iframe.contentWindow.postMessage(cmd, "*");
-  }
-
-  public updateTypeCheckStatus(
-    status: "loading" | "ok" | "error",
-    errorCount?: number,
-  ) {
-    // Type checking is now handled internally by the iframe
-    // Status updates are triggered by player rendering, not typecheck completion
-    console.log("[Preview] Type check status:", status, errorCount);
-  }
-
-  public updateBundleStatus(
-    status: "loading" | "ok" | "error",
-    error?: string,
-  ) {
-    // Bundle status is now handled internally
-    // Status updates come via player-status message when players render
-    console.log("[Preview] Bundle status:", status, error);
   }
 
   public updateBundleOutput(code: string, runtimeModules?: Set<string>) {

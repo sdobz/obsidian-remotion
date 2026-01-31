@@ -6,7 +6,7 @@ import {
   getVaultRootPath,
   setupPluginDirectory,
 } from "./config";
-import { RemotionSettingTab, ViewManager } from "./ui";
+import { RemotionSettingTab, ViewManager, StatusBarManager } from "./ui";
 import {
   editorDiagnosticsExtension,
   applyEditorDiagnostics,
@@ -21,11 +21,13 @@ export default class RemotionPlugin extends Plugin {
   private compilationManager!: CompilationManager;
   private scrollManager: ScrollManager | null = null;
   private viewManager!: ViewManager;
+  private statusBar!: StatusBarManager;
 
   async onload() {
     await this.loadSettings();
 
     this.viewManager = new ViewManager(this.app);
+    this.statusBar = new StatusBarManager(this.addStatusBarItem.bind(this));
 
     this.registerEditorExtension(editorDiagnosticsExtension);
 
@@ -62,7 +64,6 @@ export default class RemotionPlugin extends Plugin {
 
     // Open preview in right sidebar when workspace is ready
     this.app.workspace.onLayoutReady(() => {
-      console.log("[Plugin] Workspace layout ready");
       void this.viewManager.ensureSidebarTab();
       this.onActiveLeafChange();
     });
@@ -105,7 +106,6 @@ export default class RemotionPlugin extends Plugin {
     const container = activeView.leaf.view.containerEl;
 
     if (scrollDOM && editorView) {
-      console.log("[Plugin] Initializing ScrollManager");
       this.scrollManager = new ScrollManager(
         scrollDOM,
         container,
@@ -130,28 +130,24 @@ export default class RemotionPlugin extends Plugin {
     const previewView = this.viewManager.getVisiblePreviewView();
     if (!activeView || !previewView) return;
 
-    previewView.updateTypeCheckStatus("loading");
-    previewView.updateBundleStatus("loading");
+    this.statusBar.updateTypecheck({ status: "loading" });
+    this.statusBar.updateBundle({ status: "loading" });
 
     const version = this.compilationManager.getCurrentVersion();
     const result = await this.compilationManager.compile(activeView, version);
 
     if (!result) {
-      // Clear diagnostics on failure
+      // Clear diagnostics and update status on failure
       const cm = getEditorView(activeView);
       if (cm) clearEditorDiagnostics(cm);
+      this.statusBar.updateTypecheck({ status: "error" });
+      this.statusBar.updateBundle({ status: "error" });
       return;
     }
 
     // Update UI with compilation status
-    previewView.updateTypeCheckStatus(
-      result.typecheckStatus.status,
-      result.typecheckStatus.errorCount,
-    );
-    previewView.updateBundleStatus(
-      result.bundleStatus.status,
-      result.bundleStatus.error,
-    );
+    this.statusBar.updateTypecheck(result.typecheckStatus);
+    this.statusBar.updateBundle(result.bundleStatus);
 
     // Apply diagnostics to editor (wiring layer responsibility)
     const cm = getEditorView(activeView);
@@ -169,7 +165,6 @@ export default class RemotionPlugin extends Plugin {
   }
 
   async onunload() {
-    console.log("Unloading Remotion Plugin");
     if (this.scrollManager) {
       this.scrollManager.destroy();
       this.scrollManager = null;

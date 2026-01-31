@@ -22,6 +22,7 @@ let playerPositions: PixelBand[] = [];
 let currentBands: PixelBand[] = [];
 let currentBandScrollTop = 0;
 let currentPlayerScrollTop = 0;
+let previousPlayerHeights: number[] = [];
 
 // Module registry for require polyfill
 const __modules__: Record<string, unknown> = {};
@@ -88,6 +89,7 @@ function resetPanel() {
   currentBands = [];
   currentBandScrollTop = 0;
   currentPlayerScrollTop = 0;
+  previousPlayerHeights = [];
   clearError();
 
   // Reset status
@@ -98,14 +100,6 @@ function resetPanel() {
 }
 
 function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
-  // Update viewport dimensions for preview bands and players containers
-  console.log("[iframe] Reflow:", {
-    previewHeight: cmd.bandScrollHeight,
-    bands: cmd.bands,
-    playerScrollHeight: cmd.playerScrollHeight,
-    players: cmd.players,
-  });
-
   // Store positions for rendering/overlay
   playerPositions = cmd.players;
   currentBands = cmd.bands;
@@ -122,6 +116,8 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
   // Reposition any existing players with new positions
   repositionPlayers();
   renderBandPlayerLinks();
+
+  schedulePlayerUpdate();
 }
 
 function handleBundle(cmd: IframeCommand & { type: "bundle" }) {
@@ -243,8 +239,6 @@ function renderPlayers(sequence: Sequence): void {
     );
   });
 
-  console.log("[iframe] Rendering", nodes.length, "players");
-
   if (__root) {
     __root.render(React.createElement(React.Fragment, null, ...nodes));
   } else if (ReactDomClient.render) {
@@ -257,11 +251,12 @@ function renderPlayers(sequence: Sequence): void {
   // After render, ensure players have correct positions
   repositionPlayers();
 
-  console.log("[iframe] Players rendered, notifying parent in 100ms");
+  schedulePlayerUpdate();
+}
 
+function schedulePlayerUpdate(): void {
   // Notify parent that players have been rendered with their dimensions
   setTimeout(() => {
-    console.log("[iframe] Sending player-status message");
     const playersContainer = document.getElementById("players-container");
     const playerElements = playersContainer
       ? Array.from(playersContainer.children)
@@ -272,10 +267,18 @@ function renderPlayers(sequence: Sequence): void {
       height: (el as HTMLElement).offsetHeight || 100,
     }));
 
-    window.parent.postMessage(
-      { type: "player-status", players: playerStatuses },
-      "*",
-    );
+    // Only send if heights changed (break reflow loop)
+    const heightsChanged =
+      playerStatuses.length !== previousPlayerHeights.length ||
+      playerStatuses.some((s, i) => s.height !== previousPlayerHeights[i]);
+
+    if (heightsChanged) {
+      previousPlayerHeights = playerStatuses.map((s) => s.height);
+      window.parent.postMessage(
+        { type: "player-status", players: playerStatuses },
+        "*",
+      );
+    }
   }, 100);
 }
 
