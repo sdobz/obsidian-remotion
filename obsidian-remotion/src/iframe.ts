@@ -19,6 +19,9 @@ type Sequence = {
 // State management
 let hasContent = false;
 let playerPositions: PixelBand[] = [];
+let currentBands: PixelBand[] = [];
+let currentBandScrollTop = 0;
+let currentPlayerScrollTop = 0;
 
 // Module registry for require polyfill
 const __modules__: Record<string, unknown> = {};
@@ -77,6 +80,14 @@ function resetPanel() {
   if (bandsEl) {
     bandsEl.innerHTML = "";
   }
+  const overlayEl = document.getElementById("link-overlay");
+  if (overlayEl) {
+    overlayEl.innerHTML = "";
+  }
+  playerPositions = [];
+  currentBands = [];
+  currentBandScrollTop = 0;
+  currentPlayerScrollTop = 0;
   clearError();
 
   // Reset status
@@ -95,8 +106,9 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
     players: cmd.players,
   });
 
-  // Store player positions for rendering
+  // Store positions for rendering/overlay
   playerPositions = cmd.players;
+  currentBands = cmd.bands;
 
   // Set preview bands container height to match editor scroll height
   document.getElementById("bands-wrapper")!.style.height =
@@ -109,6 +121,7 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
 
   // Reposition any existing players with new positions
   repositionPlayers();
+  renderBandPlayerLinks();
 }
 
 function handleBundle(cmd: IframeCommand & { type: "bundle" }) {
@@ -121,11 +134,13 @@ function handleBundle(cmd: IframeCommand & { type: "bundle" }) {
 function handleScroll(cmd: IframeCommand & { type: "scroll" }) {
   // Scroll preview bands container to match editor scroll
   document.getElementById("bands-scroller")!.scrollTop = cmd.bandScrollTop;
+  currentBandScrollTop = cmd.bandScrollTop;
 
   // Scroll players container using matching algorithm
   document.getElementById("players-scroller")!.scrollTop = cmd.playerScrollTop;
+  currentPlayerScrollTop = cmd.playerScrollTop;
 
-  console.log("Scroll delta:", cmd.playerScrollTop - cmd.bandScrollTop);
+  renderBandPlayerLinks();
 }
 
 function renderEmptyState(): void {
@@ -282,6 +297,43 @@ function repositionPlayers(): void {
       element.style.right = "12px";
     }
   });
+}
+
+function renderBandPlayerLinks(): void {
+  const overlay = document.getElementById(
+    "link-overlay",
+  ) as SVGSVGElement | null;
+  if (!overlay) return;
+
+  overlay.innerHTML = "";
+
+  if (currentBands.length === 0 || playerPositions.length === 0) return;
+
+  const count = Math.min(currentBands.length, playerPositions.length);
+  const bandLeft = 0;
+  const playerLeft = 12;
+
+  for (let i = 0; i < count; i++) {
+    const band = currentBands[i];
+    const player = playerPositions[i];
+
+    const bandTop = band.topOffset - currentBandScrollTop;
+    const bandBottom = bandTop + band.height;
+    const playerTop = player.topOffset - currentPlayerScrollTop;
+    const playerBottom = playerTop + player.height;
+
+    const polygon = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "polygon",
+    );
+    const points = `${bandLeft},${bandTop} ${playerLeft},${playerTop} ${playerLeft},${playerBottom} ${bandLeft},${bandBottom}`;
+    polygon.setAttribute("points", points);
+    polygon.setAttribute("fill", "rgba(59, 130, 246, 0.2)");
+    polygon.setAttribute("stroke", "rgba(59, 130, 246, 0.35)");
+    polygon.setAttribute("stroke-width", "1");
+
+    overlay.appendChild(polygon);
+  }
 }
 
 function renderPreviewBands(previewLocations: PixelBand[]): void {
