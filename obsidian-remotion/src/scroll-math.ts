@@ -20,17 +20,6 @@ export interface Band {
  */
 export type NullArray<T> = Array<T | null>;
 
-function bandTop(band: Band) {
-  return band.center - band.height / 2;
-}
-
-/**
- * Maps span bands to preview bands by:
- * 1. Scaling band positions proportionally
- * 2. Resizing bands to previewHeights
- * 3. Preventing overlaps by pushing bands downward
- * 4. Ensuring bands stay within scroll bounds
- */
 export function slipPreviews(
   spans: NullArray<Band>,
   spansScrollHeight: number,
@@ -75,17 +64,10 @@ export function slipPreviews(
 }
 
 export interface Interpolator {
-  aTop: number;
-  aBot: number;
-  bTop: number;
-  bBot: number;
-  interpolator: (
-    fromStart: number,
-    fromPos: number,
-    fromEnd: number,
-    toStart: number,
-    toEnd: number,
-  ) => number;
+  spanTop: number;
+  spanBot: number;
+  previewTop: number;
+  previewBot: number;
 }
 
 export function buildInterpolator(
@@ -93,14 +75,59 @@ export function buildInterpolator(
   editorScrollHeight: number,
   previews: NullArray<Band>,
   previewScrollHeight: number,
+  scrollCenter: number,
+  scrollSource: "editor" | "preview",
 ): Interpolator {
-  return {
-    aTop: 0,
-    aBot: 0,
-    bTop: 0,
-    bBot: 0,
-    interpolator: () => 0,
-  };
+  const bandSource = (scrollSource === "editor" ? spans : previews).filter(
+    (b) => b !== null,
+  ) as Band[];
+  const bandTarget = (scrollSource === "editor" ? previews : spans).filter(
+    (b) => b !== null,
+  ) as Band[];
+
+  // Find bands surrounding scrollCenter
+  let topIndex = -1;
+  let botIndex = -1;
+
+  for (let i = 0; i < bandSource.length; i++) {
+    if (bandSource[i].center <= scrollCenter) {
+      topIndex = i;
+    }
+    if (bandSource[i].center >= scrollCenter) {
+      botIndex = i;
+      break;
+    }
+  }
+
+  const minTop = minimumBounds(bandSource[topIndex], bandTarget[topIndex], 0);
+  const minBot = minimumBounds(
+    bandSource[botIndex],
+    bandTarget[botIndex],
+    scrollSource === "editor" ? editorScrollHeight : previewScrollHeight,
+  );
+
+  if (scrollCenter > minTop.top && scrollCenter < minBot.top) {
+}
+
+function minimumBounds(
+  a: Band | undefined,
+  b: Band | undefined,
+  fallback: number,
+) {
+  if (!a || !b) {
+    return { top: fallback, bottom: fallback };
+  }
+  if (a.height < b.height) {
+    return {
+      top: a.center - a.height / 2,
+      bottom: a.center + a.height / 2,
+    };
+  } else {
+    return {
+      top: b.center - b.height / 2,
+      bottom: b.center + b.height / 2,
+    };
+  }
 }
 
 export function interpolateScroll(

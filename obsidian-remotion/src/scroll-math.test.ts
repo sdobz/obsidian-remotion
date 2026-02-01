@@ -1,4 +1,9 @@
-import { Band, NullArray, slipPreviews } from "./scroll-math";
+import {
+  Band,
+  NullArray,
+  slipPreviews,
+  buildInterpolator,
+} from "./scroll-math";
 
 describe("parseTestCase", () => {
   test("parses the example format", () => {
@@ -168,3 +173,53 @@ function parseTestCase(input: string) {
     previewScrollHeight,
   };
 }
+
+describe("interpolator", () => {
+  test("builds an interpolator from two band pairs", () => {
+    const spans: NullArray<Band> = [
+      { center: 2, height: 1 },
+      { center: 8, height: 1 },
+    ];
+    const previews: NullArray<Band> = [
+      { center: 3, height: 1 },
+      { center: 9, height: 1 },
+    ];
+
+    const result = buildInterpolator(spans, 10, previews, 10, 5, "editor");
+
+    // Should find bands above and below scrollCenter (5)
+    expect(result.aTop).toBe(2); // span at center 2
+    expect(result.aBot).toBe(8); // span at center 8
+    expect(result.bTop).toBe(3); // preview at center 3
+    expect(result.bBot).toBe(9); // preview at center 9
+
+    // Test interpolation: map from editor range to preview range
+    // Progress from aTop to aBot: (5 - 2) / (8 - 2) = 0.5
+    // Result in preview: 3 + 0.5 * (9 - 3) = 6
+    const interpolated = result.interpolator(
+      result.aTop,
+      5,
+      result.aBot,
+      result.bTop,
+      result.bBot,
+    );
+    expect(interpolated).toBe(6);
+  });
+
+  test("falls back to 1:1 mapping when band pairs are incomplete", () => {
+    const spans: NullArray<Band> = [{ center: 5, height: 1 }];
+    const previews: NullArray<Band> = [{ center: 5, height: 1 }];
+
+    const result = buildInterpolator(spans, 10, previews, 10, 5, "editor");
+
+    // Should fall back to default values
+    expect(result.aTop).toBe(5);
+    expect(result.aBot).toBe(5);
+    expect(result.bTop).toBe(5);
+    expect(result.bBot).toBe(5);
+
+    // Interpolation should handle zero range gracefully
+    const interpolated = result.interpolator(5, 5, 5, 5, 5);
+    expect(interpolated).toBe(5);
+  });
+});
