@@ -127,7 +127,6 @@ function resetPanel() {
 }
 
 function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
-  console.log(cmd);
   // Store positions for rendering/overlay
   playerPositions = cmd.players;
   currentBands = cmd.bands;
@@ -160,14 +159,12 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
 
       // Ensure player is rendered
       if (!playerElements[i]) {
-        console.log(`[Iframe] Band back for player ${i}, rendering`);
         renderPlayer(i, currentSequence.scenes[i]);
       }
     } else {
       // Player has no band - schedule unload if not already scheduled
       if (!playerUnloadTimers.has(i) && playerElements[i]) {
         const timer = setTimeout(() => {
-          console.log(`[Iframe] Unloading player ${i} (no band)`);
           unloadPlayer(i);
           playerUnloadTimers.delete(i);
         }, UNLOAD_DEBOUNCE_MS) as unknown as number;
@@ -638,10 +635,6 @@ function loadBundle(code: string): void {
     // Only render players if we have bands (spans in viewport)
     if (currentBands.length > 0) {
       renderPlayers(sequence);
-    } else {
-      console.log(
-        "[Iframe] Bundle loaded but no bands in viewport, deferring render",
-      );
     }
   } catch (err) {
     const message =

@@ -44,8 +44,8 @@ export class ScrollManager {
   private currentPreviewPositions: NullArray<Band> = [];
   private previewScrollHeight: number = 0;
   private currentPreviewHeights: NullArray<number> = [];
-  private scrollListener: (() => void) | null = null;
-  private lastCommandedPlayerScrollTop: number = 0; // Track what we commanded, not timeout
+  private handleEditorScroll: (() => void) | null = null;
+  private lastCommandedEditorScrollTop: number = 0; // Track preview scroll commands for echo suppression in handlePlayerScroll
   private lastBandHash = hashBands([]);
   private spanInterpolatorInfo:
     | {
@@ -182,26 +182,16 @@ export class ScrollManager {
       ) -
       this.viewportHeight / 2;
 
-    // Track the commanded player scroll position for echo suppression
-    this.lastCommandedPlayerScrollTop = mappedPlayerScrollTop;
-
     this.delegate.onScroll(this.spanScrollTop, mappedPlayerScrollTop);
   }
 
   /**
    * Handle scroll events from the iframe player container
    * Maps player scroll back to editor scroll using reverse algorithm
-   * Debounced to prevent feedback loops when editor applies scroll to player
    */
   handlePlayerScroll(playerScrollTop: number): void {
-    // Ignore scroll events that match what we just commanded (echo suppression)
-    // Use threshold to account for rounding, but still catch genuine user scrolls
-    if (
-      Math.abs(playerScrollTop - this.lastCommandedPlayerScrollTop) <
-      SCROLL_COMMAND_THRESHOLD
-    ) {
-      return;
-    }
+    // Ignore scroll events that match what we just commanded the preview to do
+    // (echo from our own scroll command that wasn't suppressed on iframe side)
 
     const scrollCenter = playerScrollTop + this.viewportHeight / 2;
     const interpolatorSpec =
@@ -224,29 +214,31 @@ export class ScrollManager {
       };
     }
 
-    this.applyEditorScroll(
+    const mappedEditorScrollTop =
       this.previewInterpolatorInfo.interpolator(
         playerScrollTop + this.viewportHeight / 2,
       ) -
-        this.viewportHeight / 2,
-    );
+      this.viewportHeight / 2;
+
+    this.lastCommandedEditorScrollTop = mappedEditorScrollTop;
+    this.scrollDOM.scrollTop = mappedEditorScrollTop;
   }
 
-  /**
-   * Apply a computed editor scroll position
-   * Uses position tracking instead of timeouts to suppress scroll echo
-   */
-  private applyEditorScroll(scrollTop: number): void {
-    this.scrollDOM.scrollTop = scrollTop;
-  }
   /**
    * Set up scroll event listener to notify viewport changes
    */
   private setupScrollListener(): void {
-    this.scrollListener = () => {
+    this.handleEditorScroll = () => {
+      const editorScrollTop = this.scrollDOM.scrollTop;
+      if (
+        Math.abs(editorScrollTop - this.lastCommandedEditorScrollTop) <
+        SCROLL_COMMAND_THRESHOLD
+      ) {
+        return; // This is the echo of our own scroll command
+      }
       this.handleScroll();
     };
-    this.scrollDOM.addEventListener("scroll", this.scrollListener);
+    this.scrollDOM.addEventListener("scroll", this.handleEditorScroll);
   }
 
   /**
@@ -266,9 +258,9 @@ export class ScrollManager {
    * Clean up listeners and observers
    */
   destroy(): void {
-    if (this.scrollListener) {
-      this.scrollDOM.removeEventListener("scroll", this.scrollListener);
-      this.scrollListener = null;
+    if (this.handleEditorScroll) {
+      this.scrollDOM.removeEventListener("scroll", this.handleEditorScroll);
+      this.handleEditorScroll = null;
     }
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
