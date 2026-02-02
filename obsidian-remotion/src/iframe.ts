@@ -22,11 +22,12 @@ let playerPositions: NullArray<Band> = [];
 let currentBands: NullArray<Band> = [];
 let currentBandScrollTop = 0;
 let currentPlayerScrollTop = 0;
+let lastCommandedPlayerScrollTop = 0; // Track commanded position for echo suppression
 let previousPlayerHeights: number[] = [];
 let currentSequence: Sequence | null = null;
-let applyingScroll = false; // Prevent scroll event feedback when programmatically scrolling
 const playerUnloadTimers = new Map<number, number>();
 const UNLOAD_DEBOUNCE_MS = 300;
+const SCROLL_COMMAND_THRESHOLD = 0.5; // pixels - ignore tiny diffs from rounding
 
 // DOM element cache - all elements are known to exist in the iframe structure
 const DOM = {
@@ -43,7 +44,14 @@ const DOM = {
 
 // Ensure player scroller captures scroll events and sends them to parent
 DOM.playerScroller.addEventListener("scroll", () => {
-  if (applyingScroll) return; // Ignore scroll events we just programmatically applied
+  // Ignore scroll events that match what we just commanded (echo suppression)
+  // Use threshold to account for rounding, but still catch genuine user scrolls
+  if (
+    Math.abs(DOM.playerScroller.scrollTop - lastCommandedPlayerScrollTop) <
+    SCROLL_COMMAND_THRESHOLD
+  ) {
+    return; // This is the echo of our own scroll command
+  }
 
   window.parent.postMessage(
     {
@@ -189,14 +197,10 @@ function handleScroll(cmd: IframeCommand & { type: "scroll" }) {
   currentBandScrollTop = cmd.bandScrollTop;
 
   // Scroll players container using matching algorithm
-  // Mark as applying to prevent echo scroll events back to parent
-  applyingScroll = true;
+  // Track the commanded position for echo suppression
+  lastCommandedPlayerScrollTop = cmd.playerScrollTop;
   DOM.playerScroller.scrollTop = cmd.playerScrollTop;
   currentPlayerScrollTop = cmd.playerScrollTop;
-  // Clear flag after a frame to allow natural scroll events again
-  requestAnimationFrame(() => {
-    applyingScroll = false;
-  });
 
   renderBandPlayerLinks();
 }

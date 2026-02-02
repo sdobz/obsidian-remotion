@@ -36,6 +36,7 @@ export interface ScrollDelegate {
 // changes, positions are recalculated. We store semantic spans for replay.
 // ============================================================================
 
+const SCROLL_COMMAND_THRESHOLD = 0.5; // pixels - ignore tiny diffs
 export class ScrollManager {
   private resizeObserver: ResizeObserver | null = null;
   private currentSpans: PreviewSpan[] = [];
@@ -44,8 +45,7 @@ export class ScrollManager {
   private previewScrollHeight: number = 0;
   private currentPreviewHeights: NullArray<number> = [];
   private scrollListener: (() => void) | null = null;
-  private applyingScroll = false; // Prevent feedback loops from preview scroll
-  private applyingScrollTimeout: number | null = null;
+  private lastCommandedPlayerScrollTop: number = 0; // Track what we commanded, not timeout
   private lastBandHash = hashBands([]);
   private spanInterpolatorInfo:
     | {
@@ -176,13 +176,16 @@ export class ScrollManager {
       };
     }
 
-    this.delegate.onScroll(
-      this.spanScrollTop,
+    const mappedPlayerScrollTop =
       this.spanInterpolatorInfo.interpolator(
         this.spanScrollTop + this.viewportHeight / 2,
       ) -
-        this.viewportHeight / 2,
-    );
+      this.viewportHeight / 2;
+
+    // Track the commanded player scroll position for echo suppression
+    this.lastCommandedPlayerScrollTop = mappedPlayerScrollTop;
+
+    this.delegate.onScroll(this.spanScrollTop, mappedPlayerScrollTop);
   }
 
   /**
@@ -191,8 +194,12 @@ export class ScrollManager {
    * Debounced to prevent feedback loops when editor applies scroll to player
    */
   handlePlayerScroll(playerScrollTop: number): void {
-    // Ignore scroll events if we just applied a scroll programmatically
-    if (this.applyingScroll) {
+    // Ignore scroll events that match what we just commanded (echo suppression)
+    // Use threshold to account for rounding, but still catch genuine user scrolls
+    if (
+      Math.abs(playerScrollTop - this.lastCommandedPlayerScrollTop) <
+      SCROLL_COMMAND_THRESHOLD
+    ) {
       return;
     }
 
@@ -227,25 +234,10 @@ export class ScrollManager {
 
   /**
    * Apply a computed editor scroll position
-   * Marks scroll as programmatic to prevent feedback loops
+   * Uses position tracking instead of timeouts to suppress scroll echo
    */
   private applyEditorScroll(scrollTop: number): void {
-    this.setApplyingScroll();
     this.scrollDOM.scrollTop = scrollTop;
-  }
-
-  /**
-   * Mark that we're applying scroll programmatically to prevent feedback loops
-   */
-  private setApplyingScroll(): void {
-    this.applyingScroll = true;
-    if (this.applyingScrollTimeout !== null) {
-      clearTimeout(this.applyingScrollTimeout);
-    }
-    this.applyingScrollTimeout = window.setTimeout(() => {
-      this.applyingScroll = false;
-      this.applyingScrollTimeout = null;
-    }, 50); // 50ms window to ignore echo scroll events
   }
   /**
    * Set up scroll event listener to notify viewport changes
