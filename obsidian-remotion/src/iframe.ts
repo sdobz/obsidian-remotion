@@ -322,10 +322,17 @@ function schedulePlayerUpdate(): void {
   setTimeout(() => {
     const playerElements = Array.from(DOM.playersContainer.children);
 
-    const playerStatuses = playerElements.map((el, index) => ({
-      index,
-      height: (el as HTMLElement).offsetHeight || 100,
-    }));
+    const playerStatuses = playerElements.map((el) => {
+      // Read the actual band index from data attribute
+      const bandIndex = parseInt(
+        (el as HTMLElement).getAttribute("data-band-index") || "0",
+        10,
+      );
+      return {
+        index: bandIndex,
+        height: (el as HTMLElement).offsetHeight || 100,
+      };
+    });
 
     // Only send if heights changed (break reflow loop)
     const heightsChanged =
@@ -394,6 +401,7 @@ function renderPlayer(index: number, scene: Scene): void {
   // Create player element
   const playerDiv = document.createElement("div");
   playerDiv.setAttribute("data-scene-id", scene.id);
+  playerDiv.setAttribute("data-band-index", String(index)); // Track band index
 
   const playerWrapper = document.createElement("div");
   playerWrapper.className = "player-wrapper";
