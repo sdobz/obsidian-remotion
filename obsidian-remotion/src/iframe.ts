@@ -4,7 +4,8 @@
  */
 
 import type { IframeCommand } from "./preview";
-import type { Band, NullArray } from "./scroll-math";
+import type { Band, InterpolatorSpec, NullArray } from "./scroll-math";
+import { findInterpolatorRegion, interpolatorFor } from "./scroll-math";
 
 type Scene = {
   id: string;
@@ -22,9 +23,9 @@ let playerPositions: NullArray<Band> = [];
 let currentBands: NullArray<Band> = [];
 let currentBandScrollTop = 0;
 let currentPlayerScrollTop = 0;
-let lastCommandedPlayerScrollTop = 0; // Track commanded position for echo suppression
 let previousPlayerHeights: number[] = [];
 let currentSequence: Sequence | null = null;
+let interpolatorSpecs: InterpolatorSpec[] = []; // Interpolator specs for local scroll computation
 const playerUnloadTimers = new Map<number, number>();
 const UNLOAD_DEBOUNCE_MS = 300;
 const SCROLL_COMMAND_THRESHOLD = 0.5; // pixels - ignore tiny diffs from rounding
@@ -47,11 +48,26 @@ DOM.playerScroller.addEventListener("scroll", () => {
   // Ignore scroll events that match what we just commanded (echo suppression)
   // Use threshold to account for rounding, but still catch genuine user scrolls
   if (
-    Math.abs(DOM.playerScroller.scrollTop - lastCommandedPlayerScrollTop) <
+    Math.abs(DOM.playerScroller.scrollTop - currentPlayerScrollTop) <
     SCROLL_COMMAND_THRESHOLD
   ) {
     return; // This is the echo of our own scroll command
   }
+  currentPlayerScrollTop = DOM.playerScroller.scrollTop;
+
+  // Determine band scroll from interpolator spec
+  const viewportHeight = DOM.playerScroller.clientHeight;
+  const scrollCenter = DOM.playerScroller.scrollTop + viewportHeight / 2;
+  const interpolator = findInterpolatorRegion(
+    interpolatorSpecs,
+    scrollCenter,
+    "right",
+  );
+  currentBandScrollTop =
+    interpolatorFor(interpolator, "left")(scrollCenter) - viewportHeight / 2;
+  DOM.bandScroller.scrollTop = currentBandScrollTop;
+
+  renderBandPlayerLinks();
 
   window.parent.postMessage(
     {
@@ -130,6 +146,7 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }) {
   // Store positions for rendering/overlay
   playerPositions = cmd.players;
   currentBands = cmd.bands;
+  interpolatorSpecs = cmd.interpolatorSpecs;
 
   // Set preview bands container height to match editor scroll height
   DOM.bandsContainer.style.height = cmd.bandScrollHeight + "px";
@@ -190,14 +207,24 @@ function handleBundle(cmd: IframeCommand & { type: "bundle" }) {
 
 function handleScroll(cmd: IframeCommand & { type: "scroll" }) {
   // Scroll preview bands container to match editor scroll
-  DOM.bandScroller.scrollTop = cmd.bandScrollTop;
-  currentBandScrollTop = cmd.bandScrollTop;
+  DOM.bandScroller.scrollTop = cmd.editorScrollTop;
+  currentBandScrollTop = cmd.editorScrollTop;
 
-  // Scroll players container using matching algorithm
+  // Compute player scroll position using local interpolator specs
+  const viewportHeight = DOM.playerScroller.clientHeight;
+  const scrollCenter = cmd.editorScrollTop + viewportHeight / 2;
+  const interpolatorSpec = findInterpolatorRegion(
+    interpolatorSpecs,
+    scrollCenter,
+    "left",
+  );
+  const interpolator = interpolatorFor(interpolatorSpec, "right");
+  const playerScrollTop = interpolator(scrollCenter) - viewportHeight / 2;
+
+  // Scroll players container using mapped position
   // Track the commanded position for echo suppression
-  lastCommandedPlayerScrollTop = cmd.playerScrollTop;
-  DOM.playerScroller.scrollTop = cmd.playerScrollTop;
-  currentPlayerScrollTop = cmd.playerScrollTop;
+  currentPlayerScrollTop = playerScrollTop;
+  DOM.playerScroller.scrollTop = playerScrollTop;
 
   renderBandPlayerLinks();
 }

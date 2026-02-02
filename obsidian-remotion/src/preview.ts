@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import iframeHtml from "./iframe.html";
 import type { ScrollManager, ScrollDelegate } from "./scroll";
-import type { Band, NullArray } from "./scroll-math";
+import type { Band, InterpolatorSpec, NullArray } from "./scroll-math";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
 
@@ -38,6 +38,7 @@ export type IframeCommand =
       bands: NullArray<Band>;
       playerScrollHeight: number;
       players: NullArray<Band>;
+      interpolatorSpecs: InterpolatorSpec[];
     }
   | {
       type: "bundle";
@@ -45,8 +46,7 @@ export type IframeCommand =
     }
   | {
       type: "scroll";
-      bandScrollTop: number;
-      playerScrollTop: number;
+      editorScrollTop: number;
     };
 
 export class PreviewView extends ItemView implements ScrollDelegate {
@@ -124,6 +124,7 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     bands: NullArray<Band>,
     playerScrollHeight: number,
     players: NullArray<Band>,
+    interpolatorSpecs: InterpolatorSpec[],
   ): void {
     if (!this.iframe?.contentWindow) return;
 
@@ -133,17 +134,17 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       bands,
       playerScrollHeight,
       players,
+      interpolatorSpecs,
     };
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  onScroll(previewScrollTop: number, playerScrollTop: number): void {
+  onScroll(editorScrollTop: number): void {
     if (!this.iframe?.contentWindow) return;
 
     const cmd: IframeCommand = {
       type: "scroll",
-      bandScrollTop: previewScrollTop,
-      playerScrollTop,
+      editorScrollTop,
     };
     this.iframe.contentWindow.postMessage(cmd, "*");
   }

@@ -150,11 +150,15 @@ export function buildInterpolators(
  */
 export function findInterpolatorRegion(
   regions: InterpolatorSpec[],
-  scrollCenter: number,
+  sourceScrollCenter: number,
+  source: "left" | "right",
 ): InterpolatorSpec {
+  const top = source === "left" ? "leftTop" : "rightTop";
+  const bot = source === "left" ? "leftBot" : "rightBot";
+
   // Linear search is fine for ~10 bands (11 regions)
   for (const spec of regions) {
-    if (scrollCenter >= spec.leftTop && scrollCenter <= spec.leftBot) {
+    if (sourceScrollCenter >= spec[top] && sourceScrollCenter <= spec[bot]) {
       return spec;
     }
   }
@@ -164,7 +168,7 @@ export function findInterpolatorRegion(
     return { leftTop: 0, leftBot: 0, rightTop: 0, rightBot: 0 };
   }
 
-  if (scrollCenter < regions[0].leftTop) {
+  if (sourceScrollCenter < regions[0][top]) {
     return regions[0];
   }
 

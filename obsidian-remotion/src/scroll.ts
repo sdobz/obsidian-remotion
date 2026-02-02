@@ -24,8 +24,9 @@ export interface ScrollDelegate {
     bands: NullArray<Band>,
     playerScrollHeight: number,
     players: NullArray<Band>,
+    interpolatorSpecs: InterpolatorSpec[],
   ): void;
-  onScroll(previewScrollTop: number, playerScrollTop: number): void;
+  onScroll(editorScrollTop: number): void;
 }
 
 // ============================================================================
@@ -135,6 +136,7 @@ export class ScrollManager {
       this.currentSpanPositions,
       this.previewScrollHeight,
       this.currentPreviewPositions,
+      this.interpolatorRegions,
     );
     this.performSpanScroll();
   }
@@ -149,23 +151,10 @@ export class ScrollManager {
   }
 
   /**
-   * Notify delegate of scroll position and player positions
+   * Notify delegate of editor scroll position
    */
   private performSpanScroll(): void {
-    const scrollCenter = this.spanScrollTop + this.viewportHeight / 2;
-
-    // Lookup the appropriate interpolator spec from cached regions
-    const interpolatorSpec = findInterpolatorRegion(
-      this.interpolatorRegions,
-      scrollCenter,
-    );
-    const interpolator = interpolatorFor(interpolatorSpec, "right");
-
-    const mappedPlayerScrollTop =
-      interpolator(this.spanScrollTop + this.viewportHeight / 2) -
-      this.viewportHeight / 2;
-
-    this.delegate.onScroll(this.spanScrollTop, mappedPlayerScrollTop);
+    this.delegate.onScroll(this.spanScrollTop);
   }
 
   /**
@@ -179,6 +168,7 @@ export class ScrollManager {
     const interpolatorSpec = findInterpolatorRegion(
       this.interpolatorRegions,
       scrollCenter,
+      "right",
     );
     const interpolator = interpolatorFor(interpolatorSpec, "left");
 
