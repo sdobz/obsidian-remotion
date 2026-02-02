@@ -20,6 +20,7 @@ export interface Band {
  */
 export type NullArray<T> = Array<T | null>;
 
+const DEFAULT_PREVIEW_HEIGHT = 100;
 export function slipPreviews(
   spans: NullArray<Band>,
   spansScrollHeight: number,
@@ -33,7 +34,7 @@ export function slipPreviews(
     }
     return {
       center: band.center,
-      height: previewHeights[i]!,
+      height: previewHeights[i] ?? DEFAULT_PREVIEW_HEIGHT,
     };
   });
 

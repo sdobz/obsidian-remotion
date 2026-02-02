@@ -8,10 +8,12 @@ import type { NullArray, Band } from "../scroll-math";
 export class BandsLinksRenderer {
   private currentBands: NullArray<Band> = [];
 
-  constructor(private DOM: {
-    bandsContainer: HTMLElement;
-    linkOverlay: SVGSVGElement;
-  }) {}
+  constructor(
+    private DOM: {
+      bandsContainer: HTMLElement;
+      linkOverlay: SVGSVGElement;
+    },
+  ) {}
 
   renderBands(previewLocations: NullArray<Band>): void {
     this.DOM.bandsContainer.innerHTML = "";
