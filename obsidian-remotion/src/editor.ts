@@ -171,25 +171,35 @@ export function toBand(span: PreviewSpan, editorView: EditorView): Band | null {
  * Create autocomplete extension that queries TypeScript Language Service
  */
 export function createAutocompleteExtension(
-  getCompletions: (pos: number) => Promise<ts.CompletionEntry[]>,
+  getCompletions: (
+    pos: number,
+    prefix?: string,
+  ) => Promise<ts.CompletionEntry[]>,
 ): Extension {
   return autocompletion({
     override: [
       async (context: CompletionContext): Promise<CompletionResult | null> => {
         try {
-          const completions = await getCompletions(context.pos);
+          // Find the start of the word being typed
+          const word = context.matchBefore(/[\w$]*/);
+          const prefix = word ? word.text : "";
+
+          // Let TypeScript do the filtering with the prefix
+          const completions = await getCompletions(context.pos, prefix);
 
           if (completions.length === 0) {
             return null;
           }
 
           return {
-            from: context.pos,
+            from: word ? word.from : context.pos,
             options: completions.map((entry) => ({
               label: entry.name,
               type: entry.kind,
               detail: entry.kindModifiers,
             })),
+            // Disable filtering - TypeScript already filtered by prefix
+            filter: false,
           };
         } catch (err) {
           console.error("[remotion] Autocomplete error:", err);
@@ -197,14 +207,58 @@ export function createAutocompleteExtension(
         }
       },
     ],
+    // Let CodeMirror handle theme - it should inherit from Obsidian
+    closeOnBlur: true,
+    activateOnTyping: true,
   });
+}
+
+/**
+ * Map TypeScript displayPart kind to CodeMirror token class
+ */
+function mapDisplayPartKindToClass(kind: string): string {
+  switch (kind) {
+    case "keyword":
+      return "cm-keyword";
+    case "punctuation":
+      return "cm-punctuation";
+    case "space":
+    case "lineBreak":
+      return "";
+    case "text":
+      return "cm-type";
+    case "parameterName":
+    case "propertyName":
+    case "fieldName":
+      return "cm-property";
+    case "functionName":
+    case "methodName":
+      return "cm-variableName cm-function";
+    case "operator":
+      return "cm-operator";
+    case "stringLiteral":
+      return "cm-string";
+    case "numericLiteral":
+      return "cm-number";
+    case "className":
+    case "interfaceName":
+    case "typeParameterName":
+    case "enumName":
+      return "cm-typeName";
+    default:
+      return "cm-variableName";
+  }
 }
 
 /**
  * Create hover tooltip extension that shows TypeScript type information
  */
 export function createHoverExtension(
-  getQuickInfo: (pos: number) => Promise<string | null>,
+  getQuickInfo: (pos: number) => Promise<{
+    displayParts: ts.SymbolDisplayPart[];
+    documentation: ts.SymbolDisplayPart[];
+  } | null>,
+  renderMarkdown?: (markdown: string, container: HTMLElement) => void,
 ): Extension {
   return hoverTooltip(
     async (view: EditorView, pos: number): Promise<Tooltip | null> => {
@@ -220,15 +274,49 @@ export function createHoverExtension(
           above: true,
           create: () => {
             const dom = document.createElement("div");
-            dom.className = "remotion-hover-tooltip";
+            dom.className = "tooltip";
+            dom.style.textAlign = "left";
 
-            const code = document.createElement("code");
-            code.textContent = info;
+            // Render displayParts with syntax highlighting
+            const code = document.createElement("div");
+            code.className = "cm-line";
+            code.style.fontFamily = "var(--font-monospace)";
+            code.style.fontSize = "var(--font-smaller)";
             code.style.whiteSpace = "pre-wrap";
-            code.style.fontFamily = "monospace";
-            code.style.fontSize = "12px";
+            code.style.wordBreak = "break-word";
+
+            for (const part of info.displayParts) {
+              const span = document.createElement("span");
+              const className = mapDisplayPartKindToClass(part.kind);
+              if (className) {
+                span.className = className;
+              }
+              span.textContent = part.text;
+              code.appendChild(span);
+            }
 
             dom.appendChild(code);
+
+            // Add documentation if present
+            if (info.documentation.length > 0) {
+              const docDiv = document.createElement("div");
+              docDiv.style.marginTop = "8px";
+              docDiv.style.paddingTop = "8px";
+              docDiv.style.borderTop =
+                "1px solid var(--background-modifier-border)";
+              docDiv.style.fontSize = "var(--font-smaller)";
+              docDiv.style.color = "var(--text-muted)";
+              const markdownText = info.documentation
+                .map((d) => d.text)
+                .join("");
+              if (renderMarkdown) {
+                renderMarkdown(markdownText, docDiv);
+              } else {
+                docDiv.textContent = markdownText;
+              }
+              dom.appendChild(docDiv);
+            }
+
             return { dom };
           },
         };

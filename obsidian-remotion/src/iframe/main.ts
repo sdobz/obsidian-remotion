@@ -129,6 +129,23 @@ function resetPanel(): void {
   overlays.reset();
 }
 
+// Global error handlers to catch runtime errors
+window.addEventListener("error", (event: ErrorEvent) => {
+  event.preventDefault();
+  const message = event.message || "Unknown error";
+  const stack = event.error?.stack || "";
+  overlays.showError(message, stack);
+  sendMessage({ type: "runtime-error", error: { message, stack } });
+});
+
+window.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
+  event.preventDefault();
+  const message = event.reason?.message || String(event.reason) || "Unhandled Promise Rejection";
+  const stack = event.reason?.stack || "";
+  overlays.showError(message, stack);
+  sendMessage({ type: "runtime-error", error: { message, stack } });
+});
+
 window.addEventListener("message", (event: MessageEvent) => {
   const data = event.data as IframeCommand | undefined;
   if (!data) return;

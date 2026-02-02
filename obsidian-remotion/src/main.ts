@@ -1,4 +1,9 @@
-import { Plugin, WorkspaceLeaf, MarkdownView } from "obsidian";
+import {
+  Plugin,
+  WorkspaceLeaf,
+  MarkdownView,
+  MarkdownRenderer,
+} from "obsidian";
 import { PreviewView, PREVIEW_VIEW_TYPE } from "./preview";
 import {
   PluginSettings,
@@ -84,26 +89,35 @@ export default class RemotionPlugin extends Plugin {
 
   private registerLanguageFeatures(): void {
     // Create autocomplete extension
-    const autocompleteExt = createAutocompleteExtension(async (pos) => {
+    const autocompleteExt = createAutocompleteExtension(async (pos, prefix) => {
       const activeView = this.viewManager.getActiveMarkdownView();
       if (!activeView) return [];
 
       return await this.compilationManager.getCompletionsAtPosition(
         activeView,
         pos,
+        prefix,
       );
     });
 
     // Create hover extension
-    const hoverExt = createHoverExtension(async (pos) => {
-      const activeView = this.viewManager.getActiveMarkdownView();
-      if (!activeView) return null;
+    const hoverExt = createHoverExtension(
+      async (pos) => {
+        const activeView = this.viewManager.getActiveMarkdownView();
+        if (!activeView) return null;
 
-      return await this.compilationManager.getQuickInfoAtPosition(
-        activeView,
-        pos,
-      );
-    });
+        return await this.compilationManager.getQuickInfoAtPosition(
+          activeView,
+          pos,
+        );
+      },
+      (markdown, container) => {
+        const activeView = this.viewManager.getActiveMarkdownView();
+        const sourcePath = activeView?.file?.path ?? "";
+        container.innerHTML = "";
+        MarkdownRenderer.renderMarkdown(markdown, container, sourcePath, this);
+      },
+    );
 
     this.registerEditorExtension([autocompleteExt, hoverExt]);
   }

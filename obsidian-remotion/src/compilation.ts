@@ -566,6 +566,7 @@ export class CompilationManager {
   async getCompletionsAtPosition(
     view: MarkdownView,
     markdownPos: number,
+    prefix?: string,
   ): Promise<ts.CompletionEntry[]> {
     if (!this.languageService || !view.file) {
       return [];
@@ -595,10 +596,22 @@ export class CompilationManager {
       const completions = this.languageService.getCompletionsAtPosition(
         this.lastVirtualFileName,
         virtualOffset,
-        {},
+        { includeCompletionsWithInsertText: true },
       );
 
-      return completions?.entries || [];
+      if (!completions) {
+        return [];
+      }
+
+      // If we have a prefix, let TypeScript filter the results
+      let entries = completions.entries;
+      if (prefix && prefix.length > 0) {
+        entries = entries.filter((entry) =>
+          entry.name.toLowerCase().startsWith(prefix.toLowerCase()),
+        );
+      }
+
+      return entries;
     } catch (err) {
       console.error("[remotion] Completions failed:", err);
       return [];
@@ -611,7 +624,10 @@ export class CompilationManager {
   async getQuickInfoAtPosition(
     view: MarkdownView,
     markdownPos: number,
-  ): Promise<string | null> {
+  ): Promise<{
+    displayParts: ts.SymbolDisplayPart[];
+    documentation: ts.SymbolDisplayPart[];
+  } | null> {
     if (!this.languageService || !view.file) {
       return null;
     }
@@ -646,16 +662,11 @@ export class CompilationManager {
         return null;
       }
 
-      // Format the quick info for display
-      const displayParts = quickInfo.displayParts || [];
-      const documentation = quickInfo.documentation || [];
-
-      let result = displayParts.map((p) => p.text).join("");
-      if (documentation.length > 0) {
-        result += "\n\n" + documentation.map((d) => d.text).join("");
-      }
-
-      return result;
+      // Return structured data for syntax highlighting
+      return {
+        displayParts: quickInfo.displayParts || [],
+        documentation: quickInfo.documentation || [],
+      };
     } catch (err) {
       console.error("[remotion] Quick info failed:", err);
       return null;
