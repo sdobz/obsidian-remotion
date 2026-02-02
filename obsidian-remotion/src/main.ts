@@ -12,6 +12,8 @@ import {
   applyEditorDiagnostics,
   clearEditorDiagnostics,
   getEditorView,
+  createAutocompleteExtension,
+  createHoverExtension,
 } from "./editor";
 import { CompilationManager } from "./compilation";
 import { ScrollManager } from "./scroll";
@@ -35,6 +37,9 @@ export default class RemotionPlugin extends Plugin {
     const vaultRoot = getVaultRootPath(this.app);
     if (vaultRoot) {
       this.compilationManager = new CompilationManager(vaultRoot);
+
+      // Register Language Service extensions
+      this.registerLanguageFeatures();
     }
 
     // Set plugin directory for runtime
@@ -75,6 +80,32 @@ export default class RemotionPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  private registerLanguageFeatures(): void {
+    // Create autocomplete extension
+    const autocompleteExt = createAutocompleteExtension(async (pos) => {
+      const activeView = this.viewManager.getActiveMarkdownView();
+      if (!activeView) return [];
+
+      return await this.compilationManager.getCompletionsAtPosition(
+        activeView,
+        pos,
+      );
+    });
+
+    // Create hover extension
+    const hoverExt = createHoverExtension(async (pos) => {
+      const activeView = this.viewManager.getActiveMarkdownView();
+      if (!activeView) return null;
+
+      return await this.compilationManager.getQuickInfoAtPosition(
+        activeView,
+        pos,
+      );
+    });
+
+    this.registerEditorExtension([autocompleteExt, hoverExt]);
   }
 
   private async onActiveLeafChange() {

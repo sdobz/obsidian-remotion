@@ -24,11 +24,13 @@
     "remotion-md": "*"
   },
   "peerDependencies": {
+    "@codemirror/autocomplete": "*",
     "@codemirror/lint": "*",
     "@codemirror/state": "*",
     "@codemirror/view": "*"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "^6.20.0",
     "@codemirror/lint": "^6.9.3",
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.28.2",

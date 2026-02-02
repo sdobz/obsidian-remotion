@@ -3,6 +3,13 @@ import { EditorView, Decoration } from "@codemirror/view";
 import { StateEffect, StateField, type Extension } from "@codemirror/state";
 import type { MarkdownDiagnostic, PreviewSpan } from "remotion-md";
 import type { Band } from "./scroll-math";
+import {
+  autocompletion,
+  type CompletionContext,
+  type CompletionResult,
+} from "@codemirror/autocomplete";
+import { hoverTooltip, type Tooltip } from "@codemirror/view";
+import type ts from "typescript";
 
 /**
  * Editor Integration Module
@@ -155,4 +162,80 @@ export function toBand(span: PreviewSpan, editorView: EditorView): Band | null {
   const center = top + height / 2;
 
   return { center, height };
+}
+// ============================================================================
+// Language Service Extensions
+// ============================================================================
+
+/**
+ * Create autocomplete extension that queries TypeScript Language Service
+ */
+export function createAutocompleteExtension(
+  getCompletions: (pos: number) => Promise<ts.CompletionEntry[]>,
+): Extension {
+  return autocompletion({
+    override: [
+      async (context: CompletionContext): Promise<CompletionResult | null> => {
+        try {
+          const completions = await getCompletions(context.pos);
+
+          if (completions.length === 0) {
+            return null;
+          }
+
+          return {
+            from: context.pos,
+            options: completions.map((entry) => ({
+              label: entry.name,
+              type: entry.kind,
+              detail: entry.kindModifiers,
+            })),
+          };
+        } catch (err) {
+          console.error("[remotion] Autocomplete error:", err);
+          return null;
+        }
+      },
+    ],
+  });
+}
+
+/**
+ * Create hover tooltip extension that shows TypeScript type information
+ */
+export function createHoverExtension(
+  getQuickInfo: (pos: number) => Promise<string | null>,
+): Extension {
+  return hoverTooltip(
+    async (view: EditorView, pos: number): Promise<Tooltip | null> => {
+      try {
+        const info = await getQuickInfo(pos);
+
+        if (!info) {
+          return null;
+        }
+
+        return {
+          pos,
+          above: true,
+          create: () => {
+            const dom = document.createElement("div");
+            dom.className = "remotion-hover-tooltip";
+
+            const code = document.createElement("code");
+            code.textContent = info;
+            code.style.whiteSpace = "pre-wrap";
+            code.style.fontFamily = "monospace";
+            code.style.fontSize = "12px";
+
+            dom.appendChild(code);
+            return { dom };
+          },
+        };
+      } catch (err) {
+        console.error("[remotion] Hover tooltip error:", err);
+        return null;
+      }
+    },
+  );
 }

@@ -9,12 +9,15 @@ import {
   type ClassifiedBlock,
   type MarkdownDiagnostic,
   PreviewSpan,
+  getRuntimeModules,
+  extractPreviewCallLocations,
 } from "remotion-md";
 
 import { bundleVirtualModule } from "./bundler";
 import path from "path";
 import fs from "fs";
 import type esbuild from "esbuild";
+import ts from "typescript";
 
 export interface CompilationResult {
   previewLocations: PreviewSpan[];
@@ -30,6 +33,15 @@ export class CompilationManager {
   private updateVersion = 0;
   private lastExtractedBlocks: ClassifiedBlock[] = [];
   private esbuildInstance: typeof esbuild | null = null;
+
+  // Language Service state
+  private languageService: ts.LanguageService | null = null;
+  private languageServiceHost: ts.LanguageServiceHost | null = null;
+  private documentVersions = new Map<string, number>();
+  private virtualFiles = new Map<string, string>();
+  private lastVirtualFileName: string = "";
+  private lastSynthesizedCode: string = "";
+  private lastNodeModulesPaths: string[] = [];
 
   constructor(private vaultRoot: string) {
     this.esbuildInstance = this.loadEsbuild();
@@ -93,23 +105,38 @@ export class CompilationManager {
       path.dirname(absoluteNotePath),
     );
 
-    // TypeScript compilation - wrapped in try-catch for resilience
+    // Extract runtime modules first (needed by both TS and esbuild)
+    const runtimeModules = getRuntimeModules(synthesized.code);
+
+    // Update or create Language Service
+    this.updateLanguageService(
+      virtualFileName,
+      synthesized.code,
+      nodeModulesPaths,
+    );
+
+    // Run TypeScript diagnostics and esbuild bundling in parallel
     const tsStart = performance.now();
-    let compiled: ReturnType<typeof compileVirtualModule>;
-    try {
-      compiled = compileVirtualModule(
-        virtualFileName,
+
+    const [diagnosticsResult, bundleResult] = await Promise.all([
+      // TypeScript diagnostics path
+      this.getTypescriptDiagnostics(virtualFileName, synthesized.code),
+
+      // esbuild bundling path (compiles TypeScript directly)
+      this.bundleTypeScriptSource(
         synthesized.code,
-        nodeModulesPaths,
-      );
-    } catch (err) {
-      console.error("[remotion] TypeScript compilation failed:", err);
-      return null;
-    }
+        virtualFileName,
+        runtimeModules,
+      ),
+    ]);
+
     const tsEnd = performance.now();
 
+    if (version !== this.updateVersion) return null;
+
+    // Merge results from parallel execution
     let markdownDiagnostics = mapDiagnosticsToMarkdown(
-      compiled.diagnostics,
+      diagnosticsResult.diagnostics,
       synthesized.code,
       classified,
       synthesized.sceneExports,
@@ -119,44 +146,12 @@ export class CompilationManager {
       (d) => d.category === "error",
     ).length;
 
-    if (version !== this.updateVersion) return null;
-
-    // Bundling - wrapped in try-catch for resilience
-    const bundleStart = performance.now();
-    let bundled: Awaited<ReturnType<typeof bundleVirtualModule>>;
-    let bundleError: string | undefined;
-
-    if (!this.esbuildInstance) {
-      bundleError = "esbuild not available";
-      bundled = {
-        code: "/* esbuild not found - install esbuild in your vault */",
-        error: new Error(bundleError),
-      };
-    } else {
-      try {
-        bundled = await bundleVirtualModule(
-          compiled.code,
-          virtualFileName,
-          this.esbuildInstance,
-          compiled.runtimeModules,
-        );
-      } catch (err) {
-        console.error("[remotion] Bundle failed:", err);
-        bundleError = err instanceof Error ? err.message : String(err);
-        // Return fallback result with error message
-        bundled = {
-          code: "/* Bundle failed - see console */",
-          error: err as Error,
-        };
-      }
-    }
-    const bundleEnd = performance.now();
-
-    if (version !== this.updateVersion) return null;
-
     // Add bundle errors to diagnostics, but don't prevent rendering
-    if (bundled.error) {
-      const bundleError_mapped = parseBundleError(bundled.error, classified);
+    if (bundleResult.error) {
+      const bundleError_mapped = parseBundleError(
+        bundleResult.error,
+        classified,
+      );
       if (bundleError_mapped) {
         markdownDiagnostics = [...markdownDiagnostics, bundleError_mapped];
       }
@@ -164,7 +159,7 @@ export class CompilationManager {
 
     // Return diagnostics as data - let caller apply to editor
     const previewLocations = this.mapPreviewLocationsToMarkdown(
-      compiled.previewLocations,
+      diagnosticsResult.previewLocations,
       synthesized.code,
       activeView.editor.getValue(),
     );
@@ -173,17 +168,23 @@ export class CompilationManager {
     const endTime = performance.now();
     const totalTime = endTime - startTime;
     const tsTime = tsEnd - tsStart;
-    const bundleTime = bundleEnd - bundleStart;
-    const reloadTime = endTime - bundleEnd;
+    // Note: with parallel execution, bundleTime overlaps with tsTime
+    const reloadTime = endTime - tsEnd;
 
     console.log(
-      `[remotion] TypeScript: ${tsTime.toFixed(1)}ms | Bundle: ${bundleTime.toFixed(1)}ms | Reload: ${reloadTime.toFixed(1)}ms | Total: ${totalTime.toFixed(1)}ms`,
+      `[remotion] Parallel execution: ${tsTime.toFixed(1)}ms | Total: ${totalTime.toFixed(1)}ms | Reload: ${reloadTime.toFixed(1)}ms`,
     );
+
+    const bundleError = bundleResult.error
+      ? bundleResult.error instanceof Error
+        ? bundleResult.error.message
+        : String(bundleResult.error)
+      : undefined;
 
     return {
       previewLocations,
-      bundleCode: bundled.code || "/* Bundle failed - see diagnostics */",
-      runtimeModules: compiled.runtimeModules,
+      bundleCode: bundleResult.code || "/* Bundle failed - see diagnostics */",
+      runtimeModules,
       typecheckStatus: { status: errorCount > 0 ? "error" : "ok", errorCount },
       bundleStatus: {
         status: bundleError ? "error" : "ok",
@@ -191,6 +192,200 @@ export class CompilationManager {
       },
       diagnostics: markdownDiagnostics,
     };
+  }
+
+  private updateLanguageService(
+    virtualFileName: string,
+    sourceText: string,
+    nodeModulesPaths: string[],
+  ): void {
+    this.lastVirtualFileName = virtualFileName;
+    this.lastSynthesizedCode = sourceText;
+    this.lastNodeModulesPaths = nodeModulesPaths;
+
+    // Update virtual files map
+    this.virtualFiles.set(virtualFileName, sourceText);
+
+    // Increment document version
+    const currentVersion = this.documentVersions.get(virtualFileName) || 0;
+    this.documentVersions.set(virtualFileName, currentVersion + 1);
+
+    // Create or update Language Service
+    if (!this.languageService || !this.languageServiceHost) {
+      this.languageService = this.createLanguageService(
+        virtualFileName,
+        sourceText,
+        nodeModulesPaths,
+      );
+    }
+  }
+
+  private createLanguageService(
+    virtualFileName: string,
+    sourceText: string,
+    nodeModulesPaths: string[],
+  ): ts.LanguageService {
+    const resolutionDirectory =
+      nodeModulesPaths.length > 0
+        ? path.dirname(nodeModulesPaths[0])
+        : path.dirname(virtualFileName);
+
+    const compilerOptions: ts.CompilerOptions = {
+      jsx: ts.JsxEmit.React,
+      target: ts.ScriptTarget.ES2020,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeJs,
+      noLib: false,
+      skipLibCheck: true,
+      esModuleInterop: true,
+      strict: true,
+      noImplicitAny: true,
+      noImplicitThis: true,
+      strictNullChecks: true,
+      strictFunctionTypes: true,
+    };
+
+    this.languageServiceHost = {
+      getScriptFileNames: () => Array.from(this.virtualFiles.keys()),
+      getScriptVersion: (fileName) =>
+        String(this.documentVersions.get(fileName) || 0),
+      getScriptSnapshot: (fileName) => {
+        const text = this.virtualFiles.get(fileName);
+        if (text !== undefined) {
+          return ts.ScriptSnapshot.fromString(text);
+        }
+        // Try reading from filesystem
+        try {
+          if (fs.existsSync(fileName)) {
+            const content = fs.readFileSync(fileName, "utf-8");
+            return ts.ScriptSnapshot.fromString(content);
+          }
+        } catch {
+          // ignore
+        }
+        return undefined;
+      },
+      getCurrentDirectory: () => resolutionDirectory,
+      getCompilationSettings: () => compilerOptions,
+      getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+      fileExists: (fileName) => {
+        if (this.virtualFiles.has(fileName)) return true;
+        try {
+          return fs.existsSync(fileName);
+        } catch {
+          return false;
+        }
+      },
+      readFile: (fileName) => {
+        if (this.virtualFiles.has(fileName)) {
+          return this.virtualFiles.get(fileName);
+        }
+        try {
+          return fs.readFileSync(fileName, "utf-8");
+        } catch {
+          return undefined;
+        }
+      },
+      resolveModuleNames: (moduleNames, containingFile) => {
+        const currentDir = resolutionDirectory;
+        const resolutionCache = ts.createModuleResolutionCache(
+          currentDir,
+          (fileName) => fileName,
+        );
+
+        const realContainingFile = containingFile.startsWith("/virtual/")
+          ? path.join(currentDir, path.basename(containingFile))
+          : containingFile;
+
+        return moduleNames.map((moduleName) => {
+          const resolved = ts.resolveModuleName(
+            moduleName,
+            realContainingFile,
+            compilerOptions,
+            {
+              fileExists: this.languageServiceHost!.fileExists!,
+              readFile: this.languageServiceHost!.readFile!,
+            },
+            resolutionCache,
+          );
+
+          if (resolved.resolvedModule) {
+            return resolved.resolvedModule;
+          }
+
+          return undefined;
+        });
+      },
+    };
+
+    return ts.createLanguageService(
+      this.languageServiceHost,
+      ts.createDocumentRegistry(),
+    );
+  }
+
+  private async getTypescriptDiagnostics(
+    virtualFileName: string,
+    sourceText: string,
+  ): Promise<{
+    diagnostics: readonly ts.Diagnostic[];
+    previewLocations: PreviewSpan[];
+  }> {
+    try {
+      if (!this.languageService) {
+        throw new Error("Language Service not initialized");
+      }
+
+      // Get diagnostics from Language Service
+      const syntacticDiagnostics =
+        this.languageService.getSyntacticDiagnostics(virtualFileName);
+      const semanticDiagnostics =
+        this.languageService.getSemanticDiagnostics(virtualFileName);
+      const diagnostics = [...syntacticDiagnostics, ...semanticDiagnostics];
+
+      // Extract preview locations from source
+      const program = this.languageService.getProgram();
+      const sourceFile = program?.getSourceFile(virtualFileName);
+      const previewLocations = sourceFile
+        ? extractPreviewCallLocations(sourceFile)
+        : [];
+
+      return { diagnostics, previewLocations };
+    } catch (err) {
+      console.error("[remotion] TypeScript diagnostics failed:", err);
+      return { diagnostics: [], previewLocations: [] };
+    }
+  }
+
+  private async bundleTypeScriptSource(
+    sourceText: string,
+    virtualFileName: string,
+    runtimeModules: Set<string>,
+  ): Promise<{ code: string; error?: Error }> {
+    if (!this.esbuildInstance) {
+      const error = new Error("esbuild not available");
+      return {
+        code: "/* esbuild not found - install esbuild in your vault */",
+        error,
+      };
+    }
+
+    try {
+      // Pass TypeScript source directly to esbuild
+      const result = await bundleVirtualModule(
+        sourceText,
+        virtualFileName,
+        this.esbuildInstance,
+        runtimeModules,
+      );
+      return result;
+    } catch (err) {
+      console.error("[remotion] Bundle failed:", err);
+      return {
+        code: "/* Bundle failed - see console */",
+        error: err instanceof Error ? err : new Error(String(err)),
+      };
+    }
   }
 
   private mapPreviewLocationsToMarkdown(
@@ -290,6 +485,307 @@ export class CompilationManager {
 
   getCurrentVersion(): number {
     return this.updateVersion;
+  }
+
+  /**
+   * Map markdown cursor position to virtual TSX position
+   * Returns null if cursor is not inside a code block
+   */
+  mapMarkdownPositionToVirtual(
+    markdownLine: number,
+    markdownColumn: number,
+    markdownText: string,
+  ): { line: number; column: number } | null {
+    if (!this.lastSynthesizedCode) {
+      return null;
+    }
+
+    const synthLines = this.lastSynthesizedCode.split("\n");
+    const sentinelRegex = /^\/\/ --- block \d+ @ .*:(\d+) ---$/;
+
+    // Build a map of sentinel lines to block start lines
+    const blockMap: Array<{
+      synthStartLine: number; // Line in TSX after sentinel + blank line
+      markdownStartLine: number; // Line in markdown where block starts
+      synthSentinelLine: number; // Line where sentinel comment is
+    }> = [];
+
+    for (let i = 0; i < synthLines.length; i++) {
+      const match = synthLines[i].match(sentinelRegex);
+      if (match) {
+        const markdownStartLine = Number(match[1]);
+        const synthStartLine = i + 1 + 2; // sentinel + blank line + content starts
+        blockMap.push({
+          synthStartLine,
+          markdownStartLine,
+          synthSentinelLine: i,
+        });
+      }
+    }
+
+    // Find which block the markdown position is in
+    let targetBlock: (typeof blockMap)[0] | null = null;
+    let nextBlock: (typeof blockMap)[0] | null = null;
+
+    for (let i = 0; i < blockMap.length; i++) {
+      const block = blockMap[i];
+      if (markdownLine >= block.markdownStartLine) {
+        targetBlock = block;
+        nextBlock = blockMap[i + 1] || null;
+      } else {
+        break;
+      }
+    }
+
+    if (!targetBlock) {
+      return null; // Cursor is before any code blocks
+    }
+
+    // Calculate TSX position
+    const lineOffset = markdownLine - targetBlock.markdownStartLine;
+    const tsxLine = targetBlock.synthStartLine + lineOffset;
+
+    // Check if we're past the end of this block (before next block's sentinel)
+    if (nextBlock && tsxLine >= nextBlock.synthSentinelLine) {
+      return null; // Cursor is between blocks
+    }
+
+    return {
+      line: tsxLine,
+      column: markdownColumn,
+    };
+  }
+
+  /**
+   * Get completions at a markdown position
+   */
+  async getCompletionsAtPosition(
+    view: MarkdownView,
+    markdownPos: number,
+  ): Promise<ts.CompletionEntry[]> {
+    if (!this.languageService || !view.file) {
+      return [];
+    }
+
+    const markdownText = view.editor.getValue();
+    const { line, column } = this.posToLineColumn(markdownText, markdownPos);
+
+    const virtualPos = this.mapMarkdownPositionToVirtual(
+      line,
+      column,
+      markdownText,
+    );
+
+    if (!virtualPos || !this.lastSynthesizedCode) {
+      return [];
+    }
+
+    // Convert line/column to offset in virtual file
+    const virtualOffset = this.lineColumnToPos(
+      this.lastSynthesizedCode,
+      virtualPos.line,
+      virtualPos.column,
+    );
+
+    try {
+      const completions = this.languageService.getCompletionsAtPosition(
+        this.lastVirtualFileName,
+        virtualOffset,
+        {},
+      );
+
+      return completions?.entries || [];
+    } catch (err) {
+      console.error("[remotion] Completions failed:", err);
+      return [];
+    }
+  }
+
+  /**
+   * Get quick info (hover type information) at a markdown position
+   */
+  async getQuickInfoAtPosition(
+    view: MarkdownView,
+    markdownPos: number,
+  ): Promise<string | null> {
+    if (!this.languageService || !view.file) {
+      return null;
+    }
+
+    const markdownText = view.editor.getValue();
+    const { line, column } = this.posToLineColumn(markdownText, markdownPos);
+
+    const virtualPos = this.mapMarkdownPositionToVirtual(
+      line,
+      column,
+      markdownText,
+    );
+
+    if (!virtualPos || !this.lastSynthesizedCode) {
+      return null;
+    }
+
+    // Convert line/column to offset in virtual file
+    const virtualOffset = this.lineColumnToPos(
+      this.lastSynthesizedCode,
+      virtualPos.line,
+      virtualPos.column,
+    );
+
+    try {
+      const quickInfo = this.languageService.getQuickInfoAtPosition(
+        this.lastVirtualFileName,
+        virtualOffset,
+      );
+
+      if (!quickInfo) {
+        return null;
+      }
+
+      // Format the quick info for display
+      const displayParts = quickInfo.displayParts || [];
+      const documentation = quickInfo.documentation || [];
+
+      let result = displayParts.map((p) => p.text).join("");
+      if (documentation.length > 0) {
+        result += "\n\n" + documentation.map((d) => d.text).join("");
+      }
+
+      return result;
+    } catch (err) {
+      console.error("[remotion] Quick info failed:", err);
+      return null;
+    }
+  }
+
+  /**
+   * Get definition location at a markdown position
+   */
+  async getDefinitionAtPosition(
+    view: MarkdownView,
+    markdownPos: number,
+  ): Promise<{ filePath: string; line: number; column: number } | null> {
+    if (!this.languageService || !view.file) {
+      return null;
+    }
+
+    const markdownText = view.editor.getValue();
+    const { line, column } = this.posToLineColumn(markdownText, markdownPos);
+
+    const virtualPos = this.mapMarkdownPositionToVirtual(
+      line,
+      column,
+      markdownText,
+    );
+
+    if (!virtualPos || !this.lastSynthesizedCode) {
+      return null;
+    }
+
+    // Convert line/column to offset in virtual file
+    const virtualOffset = this.lineColumnToPos(
+      this.lastSynthesizedCode,
+      virtualPos.line,
+      virtualPos.column,
+    );
+
+    try {
+      const definitions = this.languageService.getDefinitionAtPosition(
+        this.lastVirtualFileName,
+        virtualOffset,
+      );
+
+      if (!definitions || definitions.length === 0) {
+        return null;
+      }
+
+      const def = definitions[0];
+
+      // Convert back to markdown coordinates if it's in the same virtual file
+      if (def.fileName === this.lastVirtualFileName) {
+        const defLineCol = this.posToLineColumn(
+          this.lastSynthesizedCode,
+          def.textSpan.start,
+        );
+
+        // Map back to markdown (inverse of mapMarkdownPositionToVirtual)
+        const markdownLine = this.mapVirtualLineToMarkdown(defLineCol.line);
+
+        return {
+          filePath: view.file.path,
+          line: markdownLine,
+          column: defLineCol.column,
+        };
+      }
+
+      // For definitions in other files, return the file path
+      return {
+        filePath: def.fileName,
+        line: def.textSpan.start,
+        column: 0,
+      };
+    } catch (err) {
+      console.error("[remotion] Definition lookup failed:", err);
+      return null;
+    }
+  }
+
+  private mapVirtualLineToMarkdown(virtualLine: number): number {
+    if (!this.lastSynthesizedCode) {
+      return virtualLine;
+    }
+
+    const synthLines = this.lastSynthesizedCode.split("\n");
+    const sentinelRegex = /^\/\/ --- block \d+ @ .*:(\d+) ---$/;
+
+    let currentBlock: {
+      synthStartLine: number;
+      markdownStartLine: number;
+    } | null = null;
+
+    for (let i = 0; i < synthLines.length; i++) {
+      const match = synthLines[i].match(sentinelRegex);
+      if (match) {
+        const markdownStartLine = Number(match[1]);
+        const synthStartLine = i + 1 + 2;
+
+        if (synthStartLine <= virtualLine) {
+          currentBlock = { synthStartLine, markdownStartLine };
+        } else {
+          break;
+        }
+      }
+    }
+
+    if (!currentBlock) {
+      return virtualLine;
+    }
+
+    const lineOffset = virtualLine - currentBlock.synthStartLine;
+    return currentBlock.markdownStartLine + lineOffset;
+  }
+
+  private posToLineColumn(
+    text: string,
+    pos: number,
+  ): { line: number; column: number } {
+    const lines = text.substring(0, pos).split("\n");
+    return {
+      line: lines.length,
+      column: lines[lines.length - 1].length,
+    };
+  }
+
+  private lineColumnToPos(text: string, line: number, column: number): number {
+    const lines = text.split("\n");
+    let pos = 0;
+
+    for (let i = 0; i < line - 1 && i < lines.length; i++) {
+      pos += lines[i].length + 1; // +1 for newline
+    }
+
+    pos += Math.min(column, lines[line - 1]?.length || 0);
+    return pos;
   }
 
   private loadEsbuild(): typeof esbuild | null {
