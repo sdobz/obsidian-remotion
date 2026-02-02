@@ -7,7 +7,8 @@ import type {
   NullArray,
 } from "./scroll-math";
 import {
-  buildInterpolator,
+  buildInterpolators,
+  findInterpolatorRegion,
   hashBands,
   interpolatorFor,
   slipPreviews,
@@ -45,20 +46,9 @@ export class ScrollManager {
   private previewScrollHeight: number = 0;
   private currentPreviewHeights: NullArray<number> = [];
   private handleEditorScroll: (() => void) | null = null;
-  private lastCommandedEditorScrollTop: number = 0; // Track preview scroll commands for echo suppression in handlePlayerScroll
+  private lastCommandedEditorScrollTop: number = 0;
   private lastBandHash = hashBands([]);
-  private spanInterpolatorInfo:
-    | {
-        spec: InterpolatorSpec;
-        interpolator: Interpolator;
-      }
-    | undefined;
-  private previewInterpolatorInfo:
-    | {
-        spec: InterpolatorSpec;
-        interpolator: Interpolator;
-      }
-    | undefined;
+  private interpolatorRegions: InterpolatorSpec[] = []; // Cached on reflow
 
   constructor(
     private scrollDOM: HTMLElement,
@@ -94,8 +84,7 @@ export class ScrollManager {
    * Recalculate bands and notify delegate of reflow event
    */
   private handleReflow(): void {
-    this.spanInterpolatorInfo = undefined;
-    this.previewInterpolatorInfo = undefined;
+    // Clear cached interpolator regions - will be rebuilt in performReflow
     this.currentSpanPositions = this.currentSpans.map((span) =>
       toBand(span, this.editorView, this.spanScrollTop),
     );
@@ -133,6 +122,14 @@ export class ScrollManager {
     this.currentPreviewPositions = result.previews;
     this.previewScrollHeight = result.previewScrollHeight;
 
+    // Rebuild interpolator regions for the entire document
+    this.interpolatorRegions = buildInterpolators(
+      this.currentSpanPositions,
+      this.spanScrollHeight,
+      this.currentPreviewPositions,
+      this.previewScrollHeight,
+    );
+
     this.delegate.onReflow(
       this.spanScrollHeight,
       this.currentSpanPositions,
@@ -156,30 +153,16 @@ export class ScrollManager {
    */
   private performSpanScroll(): void {
     const scrollCenter = this.spanScrollTop + this.viewportHeight / 2;
-    const interpolatorSpec =
-      this.spanInterpolatorInfo &&
-      this.spanInterpolatorInfo.spec.sourceTop <= scrollCenter &&
-      scrollCenter <= this.spanInterpolatorInfo.spec.sourceBot
-        ? this.spanInterpolatorInfo.spec
-        : buildInterpolator(
-            this.currentSpanPositions,
-            this.spanScrollHeight,
-            this.currentPreviewPositions,
-            this.previewScrollHeight,
-            scrollCenter,
-            "span",
-          );
-    if (this.spanInterpolatorInfo?.spec !== interpolatorSpec) {
-      this.spanInterpolatorInfo = {
-        spec: interpolatorSpec,
-        interpolator: interpolatorFor(interpolatorSpec),
-      };
-    }
+
+    // Lookup the appropriate interpolator spec from cached regions
+    const interpolatorSpec = findInterpolatorRegion(
+      this.interpolatorRegions,
+      scrollCenter,
+    );
+    const interpolator = interpolatorFor(interpolatorSpec, "right");
 
     const mappedPlayerScrollTop =
-      this.spanInterpolatorInfo.interpolator(
-        this.spanScrollTop + this.viewportHeight / 2,
-      ) -
+      interpolator(this.spanScrollTop + this.viewportHeight / 2) -
       this.viewportHeight / 2;
 
     this.delegate.onScroll(this.spanScrollTop, mappedPlayerScrollTop);
@@ -190,34 +173,17 @@ export class ScrollManager {
    * Maps player scroll back to editor scroll using reverse algorithm
    */
   handlePlayerScroll(playerScrollTop: number): void {
-    // Ignore scroll events that match what we just commanded the preview to do
-    // (echo from our own scroll command that wasn't suppressed on iframe side)
-
     const scrollCenter = playerScrollTop + this.viewportHeight / 2;
-    const interpolatorSpec =
-      this.previewInterpolatorInfo &&
-      this.previewInterpolatorInfo.spec.sourceTop <= scrollCenter &&
-      scrollCenter <= this.previewInterpolatorInfo.spec.sourceBot
-        ? this.previewInterpolatorInfo.spec
-        : buildInterpolator(
-            this.currentPreviewPositions,
-            this.previewScrollHeight,
-            this.currentSpanPositions,
-            this.spanScrollHeight,
-            scrollCenter,
-            "preview",
-          );
-    if (this.previewInterpolatorInfo?.spec !== interpolatorSpec) {
-      this.previewInterpolatorInfo = {
-        spec: interpolatorSpec,
-        interpolator: interpolatorFor(interpolatorSpec),
-      };
-    }
+
+    // Lookup the appropriate interpolator spec from cached regions
+    const interpolatorSpec = findInterpolatorRegion(
+      this.interpolatorRegions,
+      scrollCenter,
+    );
+    const interpolator = interpolatorFor(interpolatorSpec, "left");
 
     const mappedEditorScrollTop =
-      this.previewInterpolatorInfo.interpolator(
-        playerScrollTop + this.viewportHeight / 2,
-      ) -
+      interpolator(playerScrollTop + this.viewportHeight / 2) -
       this.viewportHeight / 2;
 
     this.lastCommandedEditorScrollTop = mappedEditorScrollTop;

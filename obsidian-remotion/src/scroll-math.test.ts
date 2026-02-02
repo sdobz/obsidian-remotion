@@ -2,7 +2,8 @@ import {
   Band,
   NullArray,
   slipPreviews,
-  buildInterpolator,
+  buildInterpolators,
+  findInterpolatorRegion,
   interpolatorFor,
   InterpolatorSpec,
 } from "./scroll-math";
@@ -190,24 +191,30 @@ function parseTestCase(input: string) {
 
 describe("interpolatorFor", () => {
   test("maps 1:1", () => {
-    const interpolator = interpolatorFor({
-      sourceTop: 0,
-      sourceBot: 10,
-      targetTop: 0,
-      targetBot: 10,
-    });
+    const interpolator = interpolatorFor(
+      {
+        leftTop: 0,
+        leftBot: 10,
+        rightTop: 0,
+        rightBot: 10,
+      },
+      "right",
+    );
 
     expect(interpolator(0)).toBe(0);
     expect(interpolator(5)).toBe(5);
     expect(interpolator(10)).toBe(10);
   });
   test("maps 1:2", () => {
-    const interpolator = interpolatorFor({
-      sourceTop: 0,
-      sourceBot: 10,
-      targetTop: 0,
-      targetBot: 20,
-    });
+    const interpolator = interpolatorFor(
+      {
+        leftTop: 0,
+        leftBot: 10,
+        rightTop: 0,
+        rightBot: 20,
+      },
+      "right",
+    );
 
     expect(interpolator(0)).toBe(0);
     expect(interpolator(5)).toBe(10);
@@ -215,12 +222,15 @@ describe("interpolatorFor", () => {
   });
 
   test("maps offset", () => {
-    const interpolator = interpolatorFor({
-      sourceTop: 0,
-      sourceBot: 10,
-      targetTop: 20,
-      targetBot: 30,
-    });
+    const interpolator = interpolatorFor(
+      {
+        leftTop: 0,
+        leftBot: 10,
+        rightTop: 20,
+        rightBot: 30,
+      },
+      "right",
+    );
 
     expect(interpolator(0)).toBe(20);
     expect(interpolator(5)).toBe(25);
@@ -228,12 +238,15 @@ describe("interpolatorFor", () => {
   });
 
   test("maps other offset", () => {
-    const interpolator = interpolatorFor({
-      sourceTop: 20,
-      sourceBot: 30,
-      targetTop: 0,
-      targetBot: 10,
-    });
+    const interpolator = interpolatorFor(
+      {
+        leftTop: 20,
+        leftBot: 30,
+        rightTop: 0,
+        rightBot: 10,
+      },
+      "right",
+    );
 
     expect(interpolator(20)).toBe(0);
     expect(interpolator(25)).toBe(5);
@@ -248,59 +261,21 @@ describe("buildInterpolator", () => {
     const spanScrollHeight = 10;
     const previewScrollHeight = 100;
 
-    const result = buildInterpolator(
+    const result = buildInterpolators(
       spans,
       spanScrollHeight,
       previews,
       previewScrollHeight,
-      5,
-      "span",
     );
 
-    expect(result.sourceTop).toBe(0);
-    expect(result.sourceBot).toBe(10);
-    expect(result.targetTop).toBe(0);
-    expect(result.targetBot).toBe(100);
-  });
-
-  test("handles document edges", () => {
-    // Degenerate case: viewports have height
-    // so the "center" will never be at the end
-    const spans: NullArray<Band> = [];
-    const previews: NullArray<Band> = [];
-    const spanScrollHeight = 10;
-    const previewScrollHeight = 100;
-
-    const tuneInterpolator = interpolateTestCase({
-      spans,
-      spanScrollHeight,
-      previews,
-      previewScrollHeight,
-      previewHeights: [],
-    });
-
-    const topSpanInterpolator = tuneInterpolator(0, "span");
-    const topPreviewInterpolator = tuneInterpolator(0, "preview");
-    const bottomSpanInterpolator = tuneInterpolator(10, "span");
-    const bottomPreviewInterpolator = tuneInterpolator(100, "preview");
-
-    const topDocument: InterpolatorSpec = {
-      sourceTop: 0,
-      sourceBot: 0,
-      targetTop: 0,
-      targetBot: 0,
-    };
-    const botDocument: InterpolatorSpec = {
-      sourceTop: 10,
-      sourceBot: 10,
-      targetTop: 100,
-      targetBot: 100,
-    };
-
-    expect(topSpanInterpolator).toEqual(topDocument);
-    expect(topPreviewInterpolator).toEqual(topDocument);
-    expect(bottomSpanInterpolator).toEqual(botDocument);
-    expect(bottomPreviewInterpolator).toEqual(botDocument);
+    expect(result).toEqual([
+      {
+        leftTop: 0,
+        leftBot: 10,
+        rightTop: 0,
+        rightBot: 100,
+      },
+    ]);
   });
 
   test("handles single band", () => {
@@ -311,43 +286,31 @@ describe("buildInterpolator", () => {
   ===   8
    3
 `);
-    const tuneInterpolator = interpolateTestCase(tc);
+    const specs = interpolateTestCase(tc);
 
-    const nearTopInterpolator = tuneInterpolator(0.1, "span");
-    const aboveBandInterpolator = tuneInterpolator(1.9, "span");
-    const nearTopBandInterpolator = tuneInterpolator(2.1, "span");
-    const nearBotBandInterpolator = tuneInterpolator(4.9, "span");
-    const belowBandInterpolator = tuneInterpolator(5.1, "span");
-    const nearBotInterpolator = tuneInterpolator(7.9, "span");
-
-    const topInterpolator: InterpolatorSpec = {
-      sourceTop: 0,
-      sourceBot: 2,
-      targetTop: 0,
-      targetBot: 2,
+    const topSpec: InterpolatorSpec = {
+      leftTop: 0,
+      leftBot: 2,
+      rightTop: 0,
+      rightBot: 2,
     };
-    const bandInterpolator: InterpolatorSpec = {
-      sourceTop: 2,
-      sourceBot: 5,
-      targetTop: 2,
-      targetBot: 5,
+    const bandSpec: InterpolatorSpec = {
+      leftTop: 2,
+      leftBot: 5,
+      rightTop: 2,
+      rightBot: 5,
     };
-    const botInterpolator: InterpolatorSpec = {
-      sourceTop: 5,
-      sourceBot: 8,
-      targetTop: 5,
-      targetBot: 8,
+    const botSpec: InterpolatorSpec = {
+      leftTop: 5,
+      leftBot: 8,
+      rightTop: 5,
+      rightBot: 8,
     };
 
-    expect(nearTopInterpolator).toEqual(topInterpolator);
-    expect(aboveBandInterpolator).toEqual(topInterpolator);
-    expect(nearTopBandInterpolator).toEqual(bandInterpolator);
-    expect(nearBotBandInterpolator).toEqual(bandInterpolator);
-    expect(belowBandInterpolator).toEqual(botInterpolator);
-    expect(nearBotInterpolator).toEqual(botInterpolator);
+    expect(specs).toEqual([topSpec, bandSpec, botSpec]);
   });
 
-  it("handles unequal bands", () => {
+  it("handles pushed bands", () => {
     const tc = parseTestCase(`
 01234567
   1
@@ -355,29 +318,36 @@ describe("buildInterpolator", () => {
  === 5
   3
 `);
-    const tuneInterpolator = interpolateTestCase(tc);
+    const specs = interpolateTestCase(tc);
 
-    const topSpanInterpolator = tuneInterpolator(0.5, "span");
-    const topPreviewInterpolator = tuneInterpolator(0.5, "preview");
-    const aboveSpanInterpolator = tuneInterpolator(1.5, "span");
-    const abovePreviewInterpolator = tuneInterpolator(1.5, "preview");
-    const inSpanInterpolator = tuneInterpolator(2.5, "span");
-    const inPreviewInterpolator = tuneInterpolator(2.5, "preview");
-    const belowSpanInterpolator = tuneInterpolator(3.5, "span");
-    const belowPreviewInterpolator = tuneInterpolator(3.5, "preview");
-    const botSpanInterpolator = tuneInterpolator(4.5, "span");
-    const botPreviewInterpolator = tuneInterpolator(4.5, "preview");
+    const topSpec: InterpolatorSpec = {
+      leftTop: 0,
+      leftBot: 2,
+      rightTop: 0,
+      rightBot: 2,
+    };
+    const bandSpec: InterpolatorSpec = {
+      leftTop: 2,
+      leftBot: 3,
+      rightTop: 2,
+      rightBot: 3,
+    };
+    const botSpec: InterpolatorSpec = {
+      leftTop: 3,
+      leftBot: 5,
+      rightTop: 3,
+      rightBot: 5,
+    };
+
+    expect(specs).toEqual([topSpec, bandSpec, botSpec]);
   });
 });
 
 function interpolateTestCase(tc: BandTestCase) {
-  return (scrollCenter: number, scrollSource: "span" | "preview") =>
-    buildInterpolator(
-      tc.spans,
-      tc.spanScrollHeight,
-      tc.previews,
-      tc.previewScrollHeight,
-      scrollCenter,
-      scrollSource,
-    );
+  return buildInterpolators(
+    tc.spans,
+    tc.spanScrollHeight,
+    tc.previews,
+    tc.previewScrollHeight,
+  );
 }

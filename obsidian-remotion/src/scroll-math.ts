@@ -65,106 +65,135 @@ export function slipPreviews(
 }
 
 export interface InterpolatorSpec {
-  sourceTop: number;
-  sourceBot: number;
-  targetTop: number;
-  targetBot: number;
+  leftTop: number;
+  leftBot: number;
+  rightTop: number;
+  rightBot: number;
 }
-export type Interpolator = (sourceScrollTop: number) => number;
 
-export function buildInterpolator(
-  spans: NullArray<Band>,
-  spanScrollHeight: number,
-  previews: NullArray<Band>,
-  previewScrollHeight: number,
+export type Interpolator = (leftScrollTop: number) => number;
+
+/**
+ * Build all interpolator specs for the entire document
+ * Returns an array covering all possible scroll positions
+ */
+export function buildInterpolators(
+  nullableLeft: NullArray<Band>,
+  leftHeight: number,
+  nullableRight: NullArray<Band>,
+  rightHeight: number,
+): InterpolatorSpec[] {
+  const leftBands = [
+    { center: 0, height: 0 },
+    ...(nullableLeft.filter((b) => b !== null) as Band[]),
+    { center: leftHeight, height: 0 },
+  ];
+  const rightBands = [
+    { center: 0, height: 0 },
+    ...(nullableRight.filter((b) => b !== null) as Band[]),
+    { center: rightHeight, height: 0 },
+  ];
+
+  const regions: InterpolatorSpec[] = [];
+
+  for (let i = 0; i < leftBands.length; i++) {
+    const leftBand = leftBands[i];
+    const rightBand = rightBands[i];
+    const smallerBand =
+      leftBand.height < rightBand.height ? leftBand : rightBand;
+    const halfSmaller = smallerBand.height / 2;
+
+    // Region 1: Exact region within the band (tight coupling)
+    const exactTop = leftBand.center - halfSmaller;
+    const exactBot = leftBand.center + halfSmaller;
+
+    if (i > 0 && i < leftBands.length - 1) {
+      // Boundary regions have zero height
+      regions.push({
+        leftTop: exactTop,
+        leftBot: exactBot,
+        rightTop: rightBand.center - halfSmaller,
+        rightBot: rightBand.center + halfSmaller,
+      });
+    }
+
+    // Region 2: Blend region to next band (if not last)
+    if (i < leftBands.length - 1) {
+      const nextLeftBand = leftBands[i + 1];
+      const nextRightBand = rightBands[i + 1];
+      const nextSmaller =
+        nextLeftBand.height < nextRightBand.height
+          ? nextLeftBand
+          : nextRightBand;
+      const halfNextSmaller = nextSmaller.height / 2;
+
+      const blendTop = exactBot;
+      const blendBot = nextLeftBand.center - halfNextSmaller;
+
+      // Only create blend region if there's space between bands
+      if (blendBot > blendTop) {
+        regions.push({
+          leftTop: blendTop,
+          leftBot: blendBot,
+          rightTop: rightBand.center + halfSmaller,
+          rightBot: nextRightBand.center - halfNextSmaller,
+        });
+      }
+    }
+  }
+
+  return regions;
+}
+
+/**
+ * Find the appropriate interpolator spec for a given scroll position
+ */
+export function findInterpolatorRegion(
+  regions: InterpolatorSpec[],
   scrollCenter: number,
-  scrollSource: "span" | "preview",
 ): InterpolatorSpec {
-  const boundedSpans = [
-    { center: 0, height: 0 },
-    ...spans,
-    { center: spanScrollHeight, height: 0 },
-  ];
-  const boundedPreviews = [
-    { center: 0, height: 0 },
-    ...previews,
-    { center: previewScrollHeight, height: 0 },
-  ];
-  const bandSource = (
-    scrollSource === "span" ? boundedSpans : boundedPreviews
-  ).filter((b) => b !== null) as Band[];
-  const bandTarget = (
-    scrollSource === "span" ? boundedPreviews : boundedSpans
-  ).filter((b) => b !== null) as Band[];
-
-  let topIndex = 0;
-  let botIndex = bandSource.length - 1;
-
-  for (let i = 0; i < bandSource.length; i++) {
-    if (bandSource[i].center <= scrollCenter) {
-      topIndex = i;
-    }
-    if (bandSource[i].center > scrollCenter) {
-      botIndex = i;
-      break;
+  // Linear search is fine for ~10 bands (11 regions)
+  for (const spec of regions) {
+    if (scrollCenter >= spec.leftTop && scrollCenter <= spec.leftBot) {
+      return spec;
     }
   }
 
-  const bandMidLine =
-    (bandSource[topIndex]!.center + bandSource[botIndex]!.center) / 2;
-
-  const closestIndex = scrollCenter > bandMidLine ? botIndex : topIndex;
-  const closestSourceBand = bandSource[closestIndex];
-  const closestTargetBand = bandTarget[closestIndex];
-
-  const scrollDistanceFromClosestBand = Math.abs(
-    scrollCenter - bandSource[closestIndex]!.center,
-  );
-
-  const smallerBand =
-    closestSourceBand.height < closestTargetBand.height
-      ? closestSourceBand
-      : closestTargetBand;
-
-  const sourceTop = bandSource[topIndex];
-  const sourceBot = bandSource[botIndex];
-  const targetTop = bandTarget[topIndex];
-  const targetBot = bandTarget[botIndex];
-
-  if (scrollDistanceFromClosestBand <= smallerBand.height / 2) {
-    return {
-      sourceTop: closestSourceBand.center - smallerBand.height / 2,
-      sourceBot: closestSourceBand.center + smallerBand.height / 2,
-      targetTop: closestTargetBand.center - smallerBand.height / 2,
-      targetBot: closestTargetBand.center + smallerBand.height / 2,
-    };
-  } else {
-    const smallerTop =
-      sourceTop.height < targetTop.height ? sourceTop : targetTop;
-    const smallerBot =
-      sourceBot.height < targetBot.height ? sourceBot : targetBot;
-    return {
-      sourceTop: sourceTop.center + smallerTop.height / 2,
-      sourceBot: sourceBot.center - smallerBot.height / 2,
-      targetTop: targetTop.center + smallerTop.height / 2,
-      targetBot: targetBot.center - smallerBot.height / 2,
-    };
+  // Fallback: use closest region (shouldn't happen but be defensive)
+  if (regions.length === 0) {
+    return { leftTop: 0, leftBot: 0, rightTop: 0, rightBot: 0 };
   }
+
+  if (scrollCenter < regions[0].leftTop) {
+    return regions[0];
+  }
+
+  return regions[regions.length - 1];
 }
 
 export function interpolatorFor(
   interpolator: InterpolatorSpec,
+  target: "left" | "right",
 ): (sourceScrollTop: number) => number {
-  const sourceRange = interpolator.sourceBot - interpolator.sourceTop;
-  const targetRange = interpolator.targetBot - interpolator.targetTop;
+  const sourceBot =
+    target === "left" ? interpolator.rightBot : interpolator.leftBot;
+  const sourceTop =
+    target === "left" ? interpolator.rightTop : interpolator.leftTop;
+  const targetTop =
+    target === "left" ? interpolator.leftTop : interpolator.rightTop;
+  const targetBot =
+    target === "left" ? interpolator.leftBot : interpolator.rightBot;
+
+  const sourceRange = sourceBot - sourceTop;
+  const targetRange = targetBot - targetTop;
 
   if (sourceRange === 0) {
-    // Avoid division by zero; stay at target top
-    return (_sourceScrollTop: number) => interpolator.targetTop;
+    // Avoid division by zero; stay at right top
+    return (_sourceScrollTop: number) => interpolator.rightTop;
   }
   return (sourceScrollTop: number) => {
-    const ratio = (sourceScrollTop - interpolator.sourceTop) / sourceRange;
-    return interpolator.targetTop + ratio * targetRange;
+    const ratio = (sourceScrollTop - sourceTop) / sourceRange;
+    return targetTop + ratio * targetRange;
   };
 }
 
