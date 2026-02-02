@@ -274,16 +274,11 @@ export function createHoverExtension(
           above: true,
           create: () => {
             const dom = document.createElement("div");
-            dom.className = "tooltip";
-            dom.style.textAlign = "left";
+            dom.className = "tooltip remotion-hover-tooltip";
 
             // Render displayParts with syntax highlighting
             const code = document.createElement("div");
-            code.className = "cm-line";
-            code.style.fontFamily = "var(--font-monospace)";
-            code.style.fontSize = "var(--font-smaller)";
-            code.style.whiteSpace = "pre-wrap";
-            code.style.wordBreak = "break-word";
+            code.className = "cm-line remotion-hover-tooltip__signature";
 
             for (const part of info.displayParts) {
               const span = document.createElement("span");
@@ -300,12 +295,7 @@ export function createHoverExtension(
             // Add documentation if present
             if (info.documentation.length > 0) {
               const docDiv = document.createElement("div");
-              docDiv.style.marginTop = "8px";
-              docDiv.style.paddingTop = "8px";
-              docDiv.style.borderTop =
-                "1px solid var(--background-modifier-border)";
-              docDiv.style.fontSize = "var(--font-smaller)";
-              docDiv.style.color = "var(--text-muted)";
+              docDiv.className = "remotion-hover-tooltip__doc";
               const markdownText = info.documentation
                 .map((d) => d.text)
                 .join("");

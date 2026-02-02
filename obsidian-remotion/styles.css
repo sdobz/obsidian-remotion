@@ -32,3 +32,33 @@
   margin: 0;
   padding: 0;
 }
+
+.remotion-hover-tooltip {
+  text-align: left;
+}
+
+.remotion-hover-tooltip__signature {
+  font-family: var(--font-monospace);
+  font-size: var(--font-smaller);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.remotion-hover-tooltip__doc {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.remotion-hover-tooltip__doc p {
+  margin: 4px 0;
+}
+
+.remotion-hover-tooltip__doc ul,
+.remotion-hover-tooltip__doc ol {
+  margin: 4px 0;
+  padding-inline-start: 16px;
+}
