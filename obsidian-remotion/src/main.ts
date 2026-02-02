@@ -102,14 +102,9 @@ export default class RemotionPlugin extends Plugin {
     if (!previewView || !activeView) return;
 
     const editorView = getEditorView(activeView);
-    const scrollDOM = editorView?.scrollDOM;
 
-    if (scrollDOM && editorView) {
-      this.scrollManager = new ScrollManager(
-        scrollDOM,
-        editorView,
-        previewView,
-      );
+    if (editorView) {
+      this.scrollManager = new ScrollManager(editorView, previewView);
       previewView.setScrollManager(this.scrollManager);
     }
   }

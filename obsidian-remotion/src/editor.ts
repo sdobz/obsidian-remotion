@@ -135,30 +135,24 @@ export function clearEditorDiagnostics(view: EditorView) {
 // Viewport Measurements
 // ============================================================================
 
-/**
- * Convert a semantic span to a pixel band using CodeMirror coordinates
- * Returns null if the span is completely outside the viewport
- * Uses document coordinates (not viewport relative)
- */
-export function toBand(
-  span: PreviewSpan,
-  editorView: EditorView,
-  scrollTop: number,
-): Band | null {
-  const spanStart = span.pos ?? 0;
-  const spanEnd = spanStart + (span.length || 0);
+export function toBand(span: PreviewSpan, editorView: EditorView): Band | null {
+  const start = span.pos;
+  const end = span.pos + span.length;
 
-  const startCoords = editorView.coordsAtPos(spanStart);
-  const endCoords = editorView.coordsAtPos(spanEnd);
+  const startCoords = editorView.coordsAtPos(start + 1);
+  const endCoords = editorView.coordsAtPos(end + 1);
 
-  // Only return a band if we can get actual coordinates (span is in viewport)
-  if (startCoords && endCoords) {
-    const height = endCoords.bottom - startCoords.top;
-    // Document coordinates = scroll position + viewport-relative position
-    const center = scrollTop + startCoords.top + height / 2;
-    return { center, height };
-  }
+  // If either end is not measurable (virtualized / folded)
+  if (!startCoords || !endCoords) return null;
 
-  // Span is outside viewport
-  return null;
+  const offset =
+    editorView.scrollDOM.scrollTop -
+    editorView.scrollDOM.getBoundingClientRect().top;
+
+  const top = startCoords.top + offset;
+  const bottom = endCoords.bottom + offset;
+  const height = bottom - top;
+  const center = top + height / 2;
+
+  return { center, height };
 }

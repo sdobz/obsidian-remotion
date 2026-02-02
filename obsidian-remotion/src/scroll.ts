@@ -14,6 +14,7 @@ import {
   slipPreviews,
 } from "./scroll-math";
 import { toBand } from "./editor";
+import { debug } from "console";
 
 /**
  * Delegate interface for ScrollManager to communicate viewport, bands, and positions
@@ -49,15 +50,18 @@ export class ScrollManager {
   private handleEditorScroll: (() => void) | null = null;
   private lastCommandedEditorScrollTop: number = 0;
   private lastBandHash = hashBands([]);
-  private interpolatorRegions: InterpolatorSpec[] = []; // Cached on reflow
+  private interpolatorRegions: InterpolatorSpec[] = [];
 
   constructor(
-    private scrollDOM: HTMLElement,
     private editorView: EditorView,
     private delegate: ScrollDelegate,
   ) {
     this.setupScrollListener();
     this.setupResizeObserver();
+  }
+
+  get scrollDOM(): HTMLElement {
+    return this.editorView.scrollDOM;
   }
 
   get spanScrollTop(): number {
@@ -85,18 +89,16 @@ export class ScrollManager {
    * Recalculate bands and notify delegate of reflow event
    */
   private handleReflow(): void {
-    // Clear cached interpolator regions - will be rebuilt in performReflow
     this.currentSpanPositions = this.currentSpans.map((span) =>
-      toBand(span, this.editorView, this.spanScrollTop),
+      toBand(span, this.editorView),
     );
-
     this.performReflow();
     this.performSpanScroll();
   }
 
   private handleScroll(): void {
     const nextBands = this.currentSpans.map((span) =>
-      toBand(span, this.editorView, this.spanScrollTop),
+      toBand(span, this.editorView),
     );
     const nextBandHash = hashBands(nextBands);
 
@@ -123,7 +125,6 @@ export class ScrollManager {
     this.currentPreviewPositions = result.previews;
     this.previewScrollHeight = result.previewScrollHeight;
 
-    // Rebuild interpolator regions for the entire document
     this.interpolatorRegions = buildInterpolators(
       this.currentSpanPositions,
       this.spanScrollHeight,
