@@ -64,10 +64,10 @@ export function slipPreviews(
 }
 
 export interface Interpolator {
-  spanTop: number;
-  spanBot: number;
-  previewTop: number;
-  previewBot: number;
+  sourceTop: number;
+  sourceBot: number;
+  targetTop: number;
+  targetBot: number;
 }
 
 export function buildInterpolator(
@@ -78,14 +78,23 @@ export function buildInterpolator(
   scrollCenter: number,
   scrollSource: "editor" | "preview",
 ): Interpolator {
-  const bandSource = (scrollSource === "editor" ? spans : previews).filter(
-    (b) => b !== null,
-  ) as Band[];
-  const bandTarget = (scrollSource === "editor" ? previews : spans).filter(
-    (b) => b !== null,
-  ) as Band[];
+  const boundedSpans = [
+    { center: 0, height: 0 },
+    ...spans,
+    { center: editorScrollHeight, height: 0 },
+  ];
+  const boundedPreviews = [
+    { center: 0, height: 0 },
+    ...previews,
+    { center: previewScrollHeight, height: 0 },
+  ];
+  const bandSource = (
+    scrollSource === "editor" ? boundedSpans : boundedPreviews
+  ).filter((b) => b !== null) as Band[];
+  const bandTarget = (
+    scrollSource === "editor" ? boundedPreviews : boundedSpans
+  ).filter((b) => b !== null) as Band[];
 
-  // Find bands surrounding scrollCenter
   let topIndex = -1;
   let botIndex = -1;
 
@@ -99,14 +108,52 @@ export function buildInterpolator(
     }
   }
 
-  const minTop = minimumBounds(bandSource[topIndex], bandTarget[topIndex], 0);
-  const minBot = minimumBounds(
-    bandSource[botIndex],
-    bandTarget[botIndex],
-    scrollSource === "editor" ? editorScrollHeight : previewScrollHeight,
+  const bandMidLine =
+    (bandSource[topIndex]!.center + bandSource[botIndex]!.center) / 2;
+
+  const closestIndex = scrollCenter > bandMidLine ? botIndex : topIndex;
+  const closestSourceBand = bandSource[closestIndex];
+  const closestTargetBand = bandTarget[closestIndex];
+
+  const scrollDistanceFromClosestBand = Math.abs(
+    scrollCenter - bandSource[closestIndex]!.center,
   );
 
-  if (scrollCenter > minTop.top && scrollCenter < minBot.top) {
+  const smallerBand =
+    closestSourceBand.height < closestTargetBand.height
+      ? closestSourceBand
+      : closestTargetBand;
+
+  const sourceTop = bandSource[topIndex];
+  const sourceBot = bandSource[botIndex];
+  const targetTop = bandTarget[topIndex];
+  const targetBot = bandTarget[botIndex];
+
+  if (scrollDistanceFromClosestBand <= smallerBand.height / 2) {
+    return {
+      sourceTop: closestSourceBand.center - smallerBand.height / 2,
+      sourceBot: closestSourceBand.center + smallerBand.height / 2,
+      targetTop: closestTargetBand.center - smallerBand.height / 2,
+      targetBot: closestTargetBand.center + smallerBand.height / 2,
+    };
+  } else {
+    const smallerTop =
+      sourceTop.height < targetTop.height ? sourceTop : targetTop;
+    const smallerBot =
+      sourceBot.height < targetBot.height ? sourceBot : targetBot;
+    return {
+      sourceTop: sourceTop.center + smallerTop.height / 2,
+      sourceBot: sourceBot.center - smallerBot.height / 2,
+      targetTop: targetTop.center + smallerTop.height / 2,
+      targetBot: targetBot.center - smallerBot.height / 2,
+    };
+  }
+
+  // Bands:
+  // Exact: Inside the min band
+
+  // Ease
+  // Lerp
 }
 
 function minimumBounds(
