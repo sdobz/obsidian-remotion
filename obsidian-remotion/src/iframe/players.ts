@@ -23,6 +23,7 @@ export class PlayerManager {
   private unloadTimers = new Map<number, number>();
   private hasContent = false;
   private __root: any = null;
+  private individualRoots = new Map<number, any>();
 
   constructor(
     private DOM: { playersContainer: HTMLElement },
@@ -130,6 +131,7 @@ export class PlayerManager {
 
     if (createRoot) {
       const root = createRoot(playerWrapper);
+      this.individualRoots.set(index, root);
       root.render(
         React.createElement(Player, {
           component: scene.component,
@@ -173,6 +175,16 @@ export class PlayerManager {
   }
 
   unload(index: number): void {
+    const root = this.individualRoots.get(index);
+    if (root) {
+      try {
+        root.unmount();
+      } catch (e) {
+        // Ignore unmount errors
+      }
+      this.individualRoots.delete(index);
+    }
+
     const playerElement = this.DOM.playersContainer.children[
       index
     ] as HTMLElement;
@@ -278,6 +290,15 @@ export class PlayerManager {
       }
       this.__root = null;
     }
+
+    this.individualRoots.forEach((root) => {
+      try {
+        root.unmount();
+      } catch (e) {
+        // Ignore unmount errors
+      }
+    });
+    this.individualRoots.clear();
 
     this.DOM.playersContainer.innerHTML = "";
     this.positions = [];

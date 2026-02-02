@@ -101,7 +101,7 @@ function handleBundle(cmd: IframeCommand & { type: "bundle" }): void {
   });
 
   if (sequence === null) {
-    DOM.playersContainer.innerHTML = "";
+    players.reset();
     overlays.renderEmptyState();
     overlays.clearError();
     overlays.hideLoading();
