@@ -222,6 +222,19 @@ describe("interpolatorFor", () => {
     expect(interpolator(5)).toBe(25);
     expect(interpolator(10)).toBe(30);
   });
+
+  test("maps other offset", () => {
+    const interpolator = interpolatorFor({
+      sourceTop: 20,
+      sourceBot: 30,
+      targetTop: 0,
+      targetBot: 10,
+    });
+
+    expect(interpolator(20)).toBe(0);
+    expect(interpolator(25)).toBe(5);
+    expect(interpolator(30)).toBe(10);
+  });
 });
 
 describe("buildInterpolator", () => {

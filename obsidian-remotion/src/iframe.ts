@@ -472,6 +472,7 @@ function repositionPlayers(): void {
       element.style.top = `${top}px`;
       element.style.left = "12px";
       element.style.right = "12px";
+      element.style.opacity = "1";
     }
   });
 }

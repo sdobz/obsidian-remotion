@@ -162,8 +162,7 @@ export function interpolatorFor(
     return (_sourceScrollTop: number) => interpolator.targetTop;
   }
   return (sourceScrollTop: number) => {
-    const sourcePos = interpolator.sourceTop + sourceScrollTop;
-    const ratio = (sourcePos - interpolator.sourceTop) / sourceRange;
+    const ratio = (sourceScrollTop - interpolator.sourceTop) / sourceRange;
     return interpolator.targetTop + ratio * targetRange;
   };
 }

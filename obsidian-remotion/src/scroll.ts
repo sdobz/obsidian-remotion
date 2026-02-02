@@ -53,7 +53,7 @@ export class ScrollManager {
         interpolator: Interpolator;
       }
     | undefined;
-  private lastPreviewScroll:
+  private previewInterpolatorInfo:
     | {
         spec: InterpolatorSpec;
         interpolator: Interpolator;
@@ -77,10 +77,6 @@ export class ScrollManager {
     return this.scrollDOM.scrollHeight;
   }
 
-  get spanScrollElement(): HTMLElement {
-    return this.scrollDOM;
-  }
-
   get viewportHeight(): number {
     return this.scrollDOM.clientHeight;
   }
@@ -98,6 +94,8 @@ export class ScrollManager {
    * Recalculate bands and notify delegate of reflow event
    */
   private handleReflow(): void {
+    this.spanInterpolatorInfo = undefined;
+    this.previewInterpolatorInfo = undefined;
     this.currentSpanPositions = this.currentSpans.map((span) =>
       toBand(span, this.editorView, this.spanScrollTop),
     );
@@ -179,7 +177,10 @@ export class ScrollManager {
 
     this.delegate.onScroll(
       this.spanScrollTop,
-      this.spanInterpolatorInfo.interpolator(this.spanScrollTop),
+      this.spanInterpolatorInfo.interpolator(
+        this.spanScrollTop + this.viewportHeight / 2,
+      ) -
+        this.viewportHeight / 2,
     );
   }
 
@@ -196,10 +197,10 @@ export class ScrollManager {
 
     const scrollCenter = playerScrollTop + this.viewportHeight / 2;
     const interpolatorSpec =
-      this.lastPreviewScroll &&
-      this.lastPreviewScroll.spec.sourceTop <= scrollCenter &&
-      scrollCenter <= this.lastPreviewScroll.spec.sourceBot
-        ? this.lastPreviewScroll.spec
+      this.previewInterpolatorInfo &&
+      this.previewInterpolatorInfo.spec.sourceTop <= scrollCenter &&
+      scrollCenter <= this.previewInterpolatorInfo.spec.sourceBot
+        ? this.previewInterpolatorInfo.spec
         : buildInterpolator(
             this.currentPreviewPositions,
             this.previewScrollHeight,
@@ -208,15 +209,18 @@ export class ScrollManager {
             scrollCenter,
             "preview",
           );
-    if (this.lastPreviewScroll?.spec !== interpolatorSpec) {
-      this.lastPreviewScroll = {
+    if (this.previewInterpolatorInfo?.spec !== interpolatorSpec) {
+      this.previewInterpolatorInfo = {
         spec: interpolatorSpec,
         interpolator: interpolatorFor(interpolatorSpec),
       };
     }
 
     this.applyEditorScroll(
-      this.lastPreviewScroll.interpolator(playerScrollTop),
+      this.previewInterpolatorInfo.interpolator(
+        playerScrollTop + this.viewportHeight / 2,
+      ) -
+        this.viewportHeight / 2,
     );
   }
 
