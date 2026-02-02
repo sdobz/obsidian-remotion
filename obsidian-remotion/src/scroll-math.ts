@@ -60,7 +60,26 @@ export function slipPreviews(
     lastPreviewBottom = band.center + halfHeight;
   }
 
-  const previewScrollHeight = Math.max(lastPreviewBottom, spansScrollHeight);
+  let previewScrollHeight;
+  const nonNullSpans = spans.filter((b): b is Band => b !== null);
+  if (nonNullSpans.length === 0) {
+    previewScrollHeight = spansScrollHeight;
+  } else {
+    const nonNullPreviews = previews.filter((b): b is Band => b !== null);
+
+    const lastSpan = nonNullSpans[nonNullSpans.length - 1];
+    const lastPreview = nonNullPreviews[nonNullPreviews.length - 1];
+
+    const smallerHalfHeight = Math.min(
+      lastSpan.height / 2,
+      lastPreview.height / 2,
+    );
+
+    const spanGapToBottom =
+      spansScrollHeight - (lastSpan.center + smallerHalfHeight);
+    previewScrollHeight =
+      lastPreview.center + smallerHalfHeight + spanGapToBottom;
+  }
 
   return { previews, previewScrollHeight };
 }
