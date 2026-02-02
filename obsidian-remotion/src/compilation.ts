@@ -3,7 +3,6 @@ import {
   extractCodeBlocks,
   classifyBlocks,
   synthesizeVirtualModule,
-  compileVirtualModule,
   mapDiagnosticsToMarkdown,
   parseBundleError,
   type ClassifiedBlock,
@@ -506,18 +505,19 @@ export class CompilationManager {
     // Build a map of sentinel lines to block start lines
     const blockMap: Array<{
       synthStartLine: number; // Line in TSX after sentinel + blank line
-      markdownStartLine: number; // Line in markdown where block starts
+      markdownFenceLine: number; // Line in markdown where fence (```) is (1-indexed)
       synthSentinelLine: number; // Line where sentinel comment is
     }> = [];
 
     for (let i = 0; i < synthLines.length; i++) {
       const match = synthLines[i].match(sentinelRegex);
       if (match) {
-        const markdownStartLine = Number(match[1]);
+        // Sentinel contains line number of the fence (```) in markdown (1-indexed)
+        const markdownFenceLine = Number(match[1]);
         const synthStartLine = i + 1 + 2; // sentinel + blank line + content starts
         blockMap.push({
           synthStartLine,
-          markdownStartLine,
+          markdownFenceLine,
           synthSentinelLine: i,
         });
       }
@@ -529,7 +529,9 @@ export class CompilationManager {
 
     for (let i = 0; i < blockMap.length; i++) {
       const block = blockMap[i];
-      if (markdownLine >= block.markdownStartLine) {
+      // Code content starts one line after the fence
+      const markdownContentStartLine = block.markdownFenceLine + 1;
+      if (markdownLine >= markdownContentStartLine) {
         targetBlock = block;
         nextBlock = blockMap[i + 1] || null;
       } else {
@@ -542,7 +544,9 @@ export class CompilationManager {
     }
 
     // Calculate TSX position
-    const lineOffset = markdownLine - targetBlock.markdownStartLine;
+    // Code content starts one line after the fence in markdown
+    const markdownContentStartLine = targetBlock.markdownFenceLine + 1;
+    const lineOffset = markdownLine - markdownContentStartLine;
     const tsxLine = targetBlock.synthStartLine + lineOffset;
 
     // Check if we're past the end of this block (before next block's sentinel)
@@ -740,17 +744,18 @@ export class CompilationManager {
 
     let currentBlock: {
       synthStartLine: number;
-      markdownStartLine: number;
+      markdownFenceLine: number;
     } | null = null;
 
     for (let i = 0; i < synthLines.length; i++) {
       const match = synthLines[i].match(sentinelRegex);
       if (match) {
-        const markdownStartLine = Number(match[1]);
+        // Sentinel contains line number of the fence (```) in markdown (1-indexed)
+        const markdownFenceLine = Number(match[1]);
         const synthStartLine = i + 1 + 2;
 
         if (synthStartLine <= virtualLine) {
-          currentBlock = { synthStartLine, markdownStartLine };
+          currentBlock = { synthStartLine, markdownFenceLine };
         } else {
           break;
         }
@@ -762,7 +767,8 @@ export class CompilationManager {
     }
 
     const lineOffset = virtualLine - currentBlock.synthStartLine;
-    return currentBlock.markdownStartLine + lineOffset;
+    // Code content starts one line after the fence
+    return currentBlock.markdownFenceLine + 1 + lineOffset;
   }
 
   private posToLineColumn(
