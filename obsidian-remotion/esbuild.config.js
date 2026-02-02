@@ -10,9 +10,9 @@ const htmlPlugin = {
     build.onLoad({ filter: /\.html$/ }, async (args) => {
       let html = await fs.promises.readFile(args.path, "utf-8");
 
-      // Build iframe.ts and inline its output into the HTML
+      // Build iframe/main.ts and inline its output into the HTML
       const iframeResult = await esbuild.build({
-        entryPoints: ["src/iframe.ts"],
+        entryPoints: ["src/iframe/main.ts"],
         bundle: true,
         platform: "browser",
         format: "iife",
