@@ -72,16 +72,16 @@ export interface Interpolator {
 
 export function buildInterpolator(
   spans: NullArray<Band>,
-  editorScrollHeight: number,
+  spanScrollHeight: number,
   previews: NullArray<Band>,
   previewScrollHeight: number,
   scrollCenter: number,
-  scrollSource: "editor" | "preview",
+  scrollSource: "span" | "preview",
 ): Interpolator {
   const boundedSpans = [
     { center: 0, height: 0 },
     ...spans,
-    { center: editorScrollHeight, height: 0 },
+    { center: spanScrollHeight, height: 0 },
   ];
   const boundedPreviews = [
     { center: 0, height: 0 },
@@ -89,20 +89,20 @@ export function buildInterpolator(
     { center: previewScrollHeight, height: 0 },
   ];
   const bandSource = (
-    scrollSource === "editor" ? boundedSpans : boundedPreviews
+    scrollSource === "span" ? boundedSpans : boundedPreviews
   ).filter((b) => b !== null) as Band[];
   const bandTarget = (
-    scrollSource === "editor" ? boundedPreviews : boundedSpans
+    scrollSource === "span" ? boundedPreviews : boundedSpans
   ).filter((b) => b !== null) as Band[];
 
-  let topIndex = -1;
-  let botIndex = -1;
+  let topIndex = 0;
+  let botIndex = bandSource.length - 1;
 
   for (let i = 0; i < bandSource.length; i++) {
     if (bandSource[i].center <= scrollCenter) {
       topIndex = i;
     }
-    if (bandSource[i].center >= scrollCenter) {
+    if (bandSource[i].center > scrollCenter) {
       botIndex = i;
       break;
     }
@@ -148,33 +148,23 @@ export function buildInterpolator(
       targetBot: targetBot.center - smallerBot.height / 2,
     };
   }
-
-  // Bands:
-  // Exact: Inside the min band
-
-  // Ease
-  // Lerp
 }
 
-function minimumBounds(
-  a: Band | undefined,
-  b: Band | undefined,
-  fallback: number,
-) {
-  if (!a || !b) {
-    return { top: fallback, bottom: fallback };
+export function interpolatorFor(
+  interpolator: Interpolator,
+): (sourceScrollTop: number) => number {
+  const sourceRange = interpolator.sourceBot - interpolator.sourceTop;
+  const targetRange = interpolator.targetBot - interpolator.targetTop;
+
+  if (sourceRange === 0) {
+    // Avoid division by zero; stay at target top
+    return (_sourceScrollTop: number) => interpolator.targetTop;
   }
-  if (a.height < b.height) {
-    return {
-      top: a.center - a.height / 2,
-      bottom: a.center + a.height / 2,
-    };
-  } else {
-    return {
-      top: b.center - b.height / 2,
-      bottom: b.center + b.height / 2,
-    };
-  }
+  return (sourceScrollTop: number) => {
+    const sourcePos = interpolator.sourceTop + sourceScrollTop;
+    const ratio = (sourcePos - interpolator.sourceTop) / sourceRange;
+    return interpolator.targetTop + ratio * targetRange;
+  };
 }
 
 export function interpolateScroll(
@@ -184,7 +174,7 @@ export function interpolateScroll(
   previewScrollHeight: number,
   previousInterpolator: Interpolator | undefined,
   scrollTop: number,
-  scrollSource: "editor" | "preview",
+  scrollSource: "span" | "preview",
 ): number {
   return 0;
 }

@@ -3,6 +3,8 @@ import {
   NullArray,
   slipPreviews,
   buildInterpolator,
+  interpolatorFor,
+  Interpolator,
 } from "./scroll-math";
 
 describe("parseTestCase", () => {
@@ -107,6 +109,14 @@ describe("scroll-math", () => {
   });
 });
 
+interface BandTestCase {
+  spans: NullArray<Band>;
+  spanScrollHeight: number;
+  previewHeights: NullArray<number>;
+  previews: NullArray<Band>;
+  previewScrollHeight: number;
+}
+
 function parseTestCase(input: string) {
   const lines = input.trim().split("\n");
   const spanHeightsLine = lines[1];
@@ -174,52 +184,183 @@ function parseTestCase(input: string) {
   };
 }
 
-describe("interpolator", () => {
-  test("builds an interpolator from two band pairs", () => {
-    const spans: NullArray<Band> = [
-      { center: 2, height: 1 },
-      { center: 8, height: 1 },
-    ];
-    const previews: NullArray<Band> = [
-      { center: 3, height: 1 },
-      { center: 9, height: 1 },
-    ];
+describe("interpolatorFor", () => {
+  test("maps 1:1", () => {
+    const interpolator = interpolatorFor({
+      sourceTop: 0,
+      sourceBot: 10,
+      targetTop: 0,
+      targetBot: 10,
+    });
 
-    const result = buildInterpolator(spans, 10, previews, 10, 5, "editor");
+    expect(interpolator(0)).toBe(0);
+    expect(interpolator(5)).toBe(5);
+    expect(interpolator(10)).toBe(10);
+  });
+  test("maps 1:2", () => {
+    const interpolator = interpolatorFor({
+      sourceTop: 0,
+      sourceBot: 10,
+      targetTop: 0,
+      targetBot: 20,
+    });
 
-    // Should find bands above and below scrollCenter (5)
-    expect(result.aTop).toBe(2); // span at center 2
-    expect(result.aBot).toBe(8); // span at center 8
-    expect(result.bTop).toBe(3); // preview at center 3
-    expect(result.bBot).toBe(9); // preview at center 9
-
-    // Test interpolation: map from editor range to preview range
-    // Progress from aTop to aBot: (5 - 2) / (8 - 2) = 0.5
-    // Result in preview: 3 + 0.5 * (9 - 3) = 6
-    const interpolated = result.interpolator(
-      result.aTop,
-      5,
-      result.aBot,
-      result.bTop,
-      result.bBot,
-    );
-    expect(interpolated).toBe(6);
+    expect(interpolator(0)).toBe(0);
+    expect(interpolator(5)).toBe(10);
+    expect(interpolator(10)).toBe(20);
   });
 
-  test("falls back to 1:1 mapping when band pairs are incomplete", () => {
-    const spans: NullArray<Band> = [{ center: 5, height: 1 }];
-    const previews: NullArray<Band> = [{ center: 5, height: 1 }];
+  test("maps offset", () => {
+    const interpolator = interpolatorFor({
+      sourceTop: 0,
+      sourceBot: 10,
+      targetTop: 20,
+      targetBot: 30,
+    });
 
-    const result = buildInterpolator(spans, 10, previews, 10, 5, "editor");
-
-    // Should fall back to default values
-    expect(result.aTop).toBe(5);
-    expect(result.aBot).toBe(5);
-    expect(result.bTop).toBe(5);
-    expect(result.bBot).toBe(5);
-
-    // Interpolation should handle zero range gracefully
-    const interpolated = result.interpolator(5, 5, 5, 5, 5);
-    expect(interpolated).toBe(5);
+    expect(interpolator(0)).toBe(20);
+    expect(interpolator(5)).toBe(25);
+    expect(interpolator(10)).toBe(30);
   });
 });
+
+describe("buildInterpolator", () => {
+  test("does nothing", () => {
+    const spans: NullArray<Band> = [];
+    const previews: NullArray<Band> = [];
+    const spanScrollHeight = 10;
+    const previewScrollHeight = 100;
+
+    const result = buildInterpolator(
+      spans,
+      spanScrollHeight,
+      previews,
+      previewScrollHeight,
+      5,
+      "span",
+    );
+
+    expect(result.sourceTop).toBe(0);
+    expect(result.sourceBot).toBe(10);
+    expect(result.targetTop).toBe(0);
+    expect(result.targetBot).toBe(100);
+  });
+
+  test("handles document edges", () => {
+    // Degenerate case: viewports have height
+    // so the "center" will never be at the end
+    const spans: NullArray<Band> = [];
+    const previews: NullArray<Band> = [];
+    const spanScrollHeight = 10;
+    const previewScrollHeight = 100;
+
+    const tuneInterpolator = interpolateTestCase({
+      spans,
+      spanScrollHeight,
+      previews,
+      previewScrollHeight,
+      previewHeights: [],
+    });
+
+    const topSpanInterpolator = tuneInterpolator(0, "span");
+    const topPreviewInterpolator = tuneInterpolator(0, "preview");
+    const bottomSpanInterpolator = tuneInterpolator(10, "span");
+    const bottomPreviewInterpolator = tuneInterpolator(100, "preview");
+
+    const topDocument: Interpolator = {
+      sourceTop: 0,
+      sourceBot: 0,
+      targetTop: 0,
+      targetBot: 0,
+    };
+    const botDocument: Interpolator = {
+      sourceTop: 10,
+      sourceBot: 10,
+      targetTop: 100,
+      targetBot: 100,
+    };
+
+    expect(topSpanInterpolator).toEqual(topDocument);
+    expect(topPreviewInterpolator).toEqual(topDocument);
+    expect(bottomSpanInterpolator).toEqual(botDocument);
+    expect(bottomPreviewInterpolator).toEqual(botDocument);
+  });
+
+  test("handles single band", () => {
+    const tc = parseTestCase(`
+01234567
+   3
+  ---   8
+  ===   8
+   3
+`);
+    const tuneInterpolator = interpolateTestCase(tc);
+
+    const nearTopInterpolator = tuneInterpolator(0.1, "span");
+    const aboveBandInterpolator = tuneInterpolator(1.9, "span");
+    const nearTopBandInterpolator = tuneInterpolator(2.1, "span");
+    const nearBotBandInterpolator = tuneInterpolator(4.9, "span");
+    const belowBandInterpolator = tuneInterpolator(5.1, "span");
+    const nearBotInterpolator = tuneInterpolator(7.9, "span");
+
+    const topInterpolator: Interpolator = {
+      sourceTop: 0,
+      sourceBot: 2,
+      targetTop: 0,
+      targetBot: 2,
+    };
+    const bandInterpolator: Interpolator = {
+      sourceTop: 2,
+      sourceBot: 5,
+      targetTop: 2,
+      targetBot: 5,
+    };
+    const botInterpolator: Interpolator = {
+      sourceTop: 5,
+      sourceBot: 8,
+      targetTop: 5,
+      targetBot: 8,
+    };
+
+    expect(nearTopInterpolator).toEqual(topInterpolator);
+    expect(aboveBandInterpolator).toEqual(topInterpolator);
+    expect(nearTopBandInterpolator).toEqual(bandInterpolator);
+    expect(nearBotBandInterpolator).toEqual(bandInterpolator);
+    expect(belowBandInterpolator).toEqual(botInterpolator);
+    expect(nearBotInterpolator).toEqual(botInterpolator);
+  });
+
+  it("handles unequal bands", () => {
+    const tc = parseTestCase(`
+01234567
+  1
+  -  5
+ === 5
+  3
+`);
+    const tuneInterpolator = interpolateTestCase(tc);
+
+    const topSpanInterpolator = tuneInterpolator(0.5, "span");
+    const topPreviewInterpolator = tuneInterpolator(0.5, "preview");
+    const aboveSpanInterpolator = tuneInterpolator(1.5, "span");
+    const abovePreviewInterpolator = tuneInterpolator(1.5, "preview");
+    const inSpanInterpolator = tuneInterpolator(2.5, "span");
+    const inPreviewInterpolator = tuneInterpolator(2.5, "preview");
+    const belowSpanInterpolator = tuneInterpolator(3.5, "span");
+    const belowPreviewInterpolator = tuneInterpolator(3.5, "preview");
+    const botSpanInterpolator = tuneInterpolator(4.5, "span");
+    const botPreviewInterpolator = tuneInterpolator(4.5, "preview");
+  });
+});
+
+function interpolateTestCase(tc: BandTestCase) {
+  return (scrollCenter: number, scrollSource: "span" | "preview") =>
+    buildInterpolator(
+      tc.spans,
+      tc.spanScrollHeight,
+      tc.previews,
+      tc.previewScrollHeight,
+      scrollCenter,
+      scrollSource,
+    );
+}
