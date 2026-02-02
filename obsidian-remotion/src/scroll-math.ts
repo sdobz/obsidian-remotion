@@ -24,6 +24,7 @@ export function slipPreviews(
   spans: NullArray<Band>,
   spansScrollHeight: number,
   previewHeights: NullArray<number>,
+  viewportHeight: number,
 ) {
   // Create previews with new heights, keeping null positions
   const previews: NullArray<Band> = spans.map((band, i) => {

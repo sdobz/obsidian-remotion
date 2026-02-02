@@ -47,6 +47,7 @@ describe("scroll-math", () => {
       tc.spans,
       tc.spanScrollHeight,
       tc.previewHeights,
+      100,
     );
     expect(result.previews).toEqual(tc.previews);
     expect(result.previewScrollHeight).toEqual(tc.previewScrollHeight);
@@ -66,6 +67,7 @@ describe("scroll-math", () => {
       tc.spans,
       tc.spanScrollHeight,
       tc.previewHeights,
+      100,
     );
     expect(result.previews).toEqual(tc.previews);
     expect(result.previewScrollHeight).toEqual(tc.previewScrollHeight);
@@ -84,6 +86,7 @@ describe("scroll-math", () => {
       tc.spans,
       tc.spanScrollHeight,
       tc.previewHeights,
+      100,
     );
     expect(result.previews).toEqual(tc.previews);
     expect(result.previewScrollHeight).toEqual(tc.previewScrollHeight);
@@ -103,6 +106,7 @@ describe("scroll-math", () => {
       tc.spans,
       tc.spanScrollHeight,
       tc.previewHeights,
+      100,
     );
     expect(result.previews).toEqual(tc.previews);
     expect(result.previewScrollHeight).toEqual(tc.previewScrollHeight);

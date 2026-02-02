@@ -128,6 +128,7 @@ export class ScrollManager {
       this.currentSpanPositions,
       this.spanScrollHeight,
       this.currentPreviewHeights,
+      this.viewportHeight,
     );
     this.currentPreviewPositions = result.previews;
     this.previewScrollHeight = result.previewScrollHeight;
