@@ -63,12 +63,13 @@ export function slipPreviews(
   return { previews, previewScrollHeight };
 }
 
-export interface Interpolator {
+export interface InterpolatorSpec {
   sourceTop: number;
   sourceBot: number;
   targetTop: number;
   targetBot: number;
 }
+export type Interpolator = (sourceScrollTop: number) => number;
 
 export function buildInterpolator(
   spans: NullArray<Band>,
@@ -77,7 +78,7 @@ export function buildInterpolator(
   previewScrollHeight: number,
   scrollCenter: number,
   scrollSource: "span" | "preview",
-): Interpolator {
+): InterpolatorSpec {
   const boundedSpans = [
     { center: 0, height: 0 },
     ...spans,
@@ -151,7 +152,7 @@ export function buildInterpolator(
 }
 
 export function interpolatorFor(
-  interpolator: Interpolator,
+  interpolator: InterpolatorSpec,
 ): (sourceScrollTop: number) => number {
   const sourceRange = interpolator.sourceBot - interpolator.sourceTop;
   const targetRange = interpolator.targetBot - interpolator.targetTop;
@@ -167,14 +168,12 @@ export function interpolatorFor(
   };
 }
 
-export function interpolateScroll(
-  spans: NullArray<Band>,
-  spansScrollHeight: number,
-  previews: NullArray<Band>,
-  previewScrollHeight: number,
-  previousInterpolator: Interpolator | undefined,
-  scrollTop: number,
-  scrollSource: "span" | "preview",
-): number {
-  return 0;
-}
+export const hashBands = (arr: (Band | null)[]): bigint => {
+  let mask = BigInt(0);
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] !== null) {
+      mask |= BigInt(1) << BigInt(i);
+    }
+  }
+  return mask;
+};

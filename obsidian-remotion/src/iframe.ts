@@ -4,7 +4,7 @@
  */
 
 import type { IframeCommand } from "./preview";
-import { PixelBand } from "./scroll";
+import type { Band, NullArray } from "./scroll-math";
 
 type Scene = {
   id: string;
@@ -18,8 +18,8 @@ type Sequence = {
 
 // State management
 let hasContent = false;
-let playerPositions: (PixelBand | null)[] = [];
-let currentBands: (PixelBand | null)[] = [];
+let playerPositions: NullArray<Band> = [];
+let currentBands: NullArray<Band> = [];
 let currentBandScrollTop = 0;
 let currentPlayerScrollTop = 0;
 let previousPlayerHeights: number[] = [];
@@ -448,7 +448,8 @@ function renderPlayer(index: number, scene: Scene): void {
   const position = playerPositions[index];
   if (position) {
     playerDiv.style.position = "absolute";
-    playerDiv.style.top = `${position.top}px`;
+    const top = position.center - position.height / 2;
+    playerDiv.style.top = `${top}px`;
     playerDiv.style.left = "12px";
     playerDiv.style.right = "12px";
   }
@@ -467,7 +468,8 @@ function repositionPlayers(): void {
     const position = playerPositions[index];
     if (position) {
       element.style.position = "absolute";
-      element.style.top = `${position.top}px`;
+      const top = position.center - position.height / 2;
+      element.style.top = `${top}px`;
       element.style.left = "12px";
       element.style.right = "12px";
     }
@@ -488,9 +490,10 @@ function renderBandPlayerLinks(): void {
 
     if (!band || !player) continue;
 
-    const bandTop = band.top - currentBandScrollTop;
+    const bandTop = band.center - band.height / 2 - currentBandScrollTop;
     const bandBottom = bandTop + band.height;
-    const playerTop = player.top - currentPlayerScrollTop;
+    const playerTop =
+      player.center - player.height / 2 - currentPlayerScrollTop;
     const playerBottom = playerTop + player.height;
 
     const polygon = document.createElementNS(
@@ -507,7 +510,7 @@ function renderBandPlayerLinks(): void {
   }
 }
 
-function renderPreviewBands(previewLocations: (PixelBand | null)[]): void {
+function renderPreviewBands(previewLocations: NullArray<Band>): void {
   // Clear existing bands
   DOM.bandsContainer.innerHTML = "";
 
@@ -521,7 +524,9 @@ function renderPreviewBands(previewLocations: (PixelBand | null)[]): void {
     const band = document.createElement("div");
     band.className = "preview-band";
 
-    band.style.top = loc.top + "px";
+    // Convert from center-based to top-based positioning
+    const top = loc.center - loc.height / 2;
+    band.style.top = top + "px";
     band.style.height = loc.height + "px";
 
     DOM.bandsContainer.appendChild(band);

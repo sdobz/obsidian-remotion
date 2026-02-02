@@ -1,12 +1,18 @@
 import type { EditorView } from "@codemirror/view";
 import type { PreviewSpan } from "remotion-md";
-import * as scrollMath from "./scrollMath";
-import { toPixelBand } from "./editor";
-
-export interface PixelBand {
-  top: number;
-  height: number;
-}
+import type {
+  Band,
+  Interpolator,
+  InterpolatorSpec,
+  NullArray,
+} from "./scroll-math";
+import {
+  buildInterpolator,
+  hashBands,
+  interpolatorFor,
+  slipPreviews,
+} from "./scroll-math";
+import { toBand } from "./editor";
 
 /**
  * Delegate interface for ScrollManager to communicate viewport, bands, and positions
@@ -14,9 +20,9 @@ export interface PixelBand {
 export interface ScrollDelegate {
   onReflow(
     previewHeight: number,
-    bands: (PixelBand | null)[],
+    bands: NullArray<Band>,
     playerScrollHeight: number,
-    players: (PixelBand | null)[],
+    players: NullArray<Band>,
   ): void;
   onScroll(previewScrollTop: number, playerScrollTop: number): void;
 }
@@ -24,7 +30,7 @@ export interface ScrollDelegate {
 // ============================================================================
 // Scroll and Band Management
 //
-// Flow: SemanticSpans → PixelBands → PlayerPositions → Viewport
+// Flow: SemanticSpans → Bands → PlayerPositions → Viewport
 //
 // All calculations depend on current editor scroll state. When scroll/height
 // changes, positions are recalculated. We store semantic spans for replay.
@@ -33,22 +39,29 @@ export interface ScrollDelegate {
 export class ScrollManager {
   private resizeObserver: ResizeObserver | null = null;
   private currentSpans: PreviewSpan[] = [];
-  private currentBands: (PixelBand | null)[] = [];
-  private lastBandHash: bigint = scrollMath.hashBands([]);
-  private currentPlayerPositions: (PixelBand | null)[] = [];
-  private currentPlayerHeights: number[] = [];
+  private currentSpanPositions: NullArray<Band> = [];
+  private currentPreviewPositions: NullArray<Band> = [];
+  private previewScrollHeight: number = 0;
+  private currentPreviewHeights: NullArray<number> = [];
   private scrollListener: (() => void) | null = null;
-  private applyingScroll = false; // Prevent feedback loops from player scroll
+  private applyingScroll = false; // Prevent feedback loops from preview scroll
   private applyingScrollTimeout: number | null = null;
-  // Separate scroll states for forward (editor->player) and reverse (player->editor) mappings
-  private spanScrollState: scrollMath.ScrollState = { lastActiveIndex: null };
-  private previewScrollState: scrollMath.ScrollState = {
-    lastActiveIndex: null,
-  };
+  private lastBandHash = hashBands([]);
+  private spanInterpolatorInfo:
+    | {
+        spec: InterpolatorSpec;
+        interpolator: Interpolator;
+      }
+    | undefined;
+  private lastPreviewScroll:
+    | {
+        spec: InterpolatorSpec;
+        interpolator: Interpolator;
+      }
+    | undefined;
 
   constructor(
     private scrollDOM: HTMLElement,
-    private container: HTMLElement,
     private editorView: EditorView,
     private delegate: ScrollDelegate,
   ) {
@@ -56,16 +69,20 @@ export class ScrollManager {
     this.setupResizeObserver();
   }
 
-  get scrollTop(): number {
+  get spanScrollTop(): number {
     return this.scrollDOM.scrollTop;
   }
 
-  get scrollHeight(): number {
+  get spanScrollHeight(): number {
     return this.scrollDOM.scrollHeight;
   }
 
-  get scrollElement(): HTMLElement {
+  get spanScrollElement(): HTMLElement {
     return this.scrollDOM;
+  }
+
+  get viewportHeight(): number {
+    return this.scrollDOM.clientHeight;
   }
 
   /**
@@ -81,57 +98,56 @@ export class ScrollManager {
    * Recalculate bands and notify delegate of reflow event
    */
   private handleReflow(): void {
-    this.currentBands = this.currentSpans.map((span) =>
-      toPixelBand(span, this.editorView, this.scrollTop),
+    this.currentSpanPositions = this.currentSpans.map((span) =>
+      toBand(span, this.editorView, this.spanScrollTop),
     );
-    this.lastBandHash = scrollMath.hashBands(this.currentBands);
 
     this.performReflow();
-    this.performScroll();
+    this.performSpanScroll();
   }
 
   private handleScroll(): void {
     const nextBands = this.currentSpans.map((span) =>
-      toPixelBand(span, this.editorView, this.scrollTop),
+      toBand(span, this.editorView, this.spanScrollTop),
     );
-    const nextBandHash = scrollMath.hashBands(nextBands);
+    const nextBandHash = hashBands(nextBands);
 
     // Only reflow if bands have changed
     if (nextBandHash !== this.lastBandHash) {
-      this.currentBands = nextBands;
+      this.currentSpanPositions = nextBands;
       this.lastBandHash = nextBandHash;
       this.performReflow();
     }
 
-    this.performScroll();
+    this.performSpanScroll();
   }
 
   /**
    * Use existing state to perform reflow
    */
   private performReflow(): void {
-    const layoutResult = scrollMath.layoutPlayers(
-      this.currentBands,
-      this.scrollHeight,
-      this.currentPlayerHeights,
+    const result = slipPreviews(
+      this.currentSpanPositions,
+      this.spanScrollHeight,
+      this.currentPreviewHeights,
     );
-    this.currentPlayerPositions = layoutResult.positions;
-    const playerScrollHeight = layoutResult.height;
+    this.currentPreviewPositions = result.previews;
+    this.previewScrollHeight = result.previewScrollHeight;
 
     this.delegate.onReflow(
-      this.scrollHeight,
-      this.currentBands,
-      playerScrollHeight,
-      this.currentPlayerPositions,
+      this.spanScrollHeight,
+      this.currentSpanPositions,
+      this.previewScrollHeight,
+      this.currentPreviewPositions,
     );
-    this.performScroll();
+    this.performSpanScroll();
   }
 
   /**
    * Replay stored spans (e.g., after players-rendered event)
    */
   handlePlayerHeights(playerHeights: number[]): void {
-    this.currentPlayerHeights = playerHeights;
+    this.currentPreviewHeights = playerHeights;
 
     this.handleReflow();
   }
@@ -139,17 +155,32 @@ export class ScrollManager {
   /**
    * Notify delegate of scroll position and player positions
    */
-  private performScroll(): void {
-    const playerScrollTop = scrollMath.mapScroll(
-      this.currentBands,
-      this.scrollTop,
-      this.container.clientHeight,
-      this.currentPlayerPositions,
-      this.container.clientHeight,
-      this.spanScrollState,
-    );
+  private performSpanScroll(): void {
+    const scrollCenter = this.spanScrollTop + this.viewportHeight / 2;
+    const interpolatorSpec =
+      this.spanInterpolatorInfo &&
+      this.spanInterpolatorInfo.spec.sourceTop <= scrollCenter &&
+      scrollCenter <= this.spanInterpolatorInfo.spec.sourceBot
+        ? this.spanInterpolatorInfo.spec
+        : buildInterpolator(
+            this.currentSpanPositions,
+            this.spanScrollHeight,
+            this.currentPreviewPositions,
+            this.previewScrollHeight,
+            scrollCenter,
+            "span",
+          );
+    if (this.spanInterpolatorInfo?.spec !== interpolatorSpec) {
+      this.spanInterpolatorInfo = {
+        spec: interpolatorSpec,
+        interpolator: interpolatorFor(interpolatorSpec),
+      };
+    }
 
-    this.delegate.onScroll(this.scrollTop, playerScrollTop);
+    this.delegate.onScroll(
+      this.spanScrollTop,
+      this.spanInterpolatorInfo.interpolator(this.spanScrollTop),
+    );
   }
 
   /**
@@ -163,16 +194,30 @@ export class ScrollManager {
       return;
     }
 
-    const editorScrollTop = scrollMath.mapScroll(
-      this.currentPlayerPositions,
-      playerScrollTop,
-      this.container.clientHeight,
-      this.currentBands,
-      this.container.clientHeight,
-      this.previewScrollState,
-    );
+    const scrollCenter = playerScrollTop + this.viewportHeight / 2;
+    const interpolatorSpec =
+      this.lastPreviewScroll &&
+      this.lastPreviewScroll.spec.sourceTop <= scrollCenter &&
+      scrollCenter <= this.lastPreviewScroll.spec.sourceBot
+        ? this.lastPreviewScroll.spec
+        : buildInterpolator(
+            this.currentPreviewPositions,
+            this.previewScrollHeight,
+            this.currentSpanPositions,
+            this.spanScrollHeight,
+            scrollCenter,
+            "preview",
+          );
+    if (this.lastPreviewScroll?.spec !== interpolatorSpec) {
+      this.lastPreviewScroll = {
+        spec: interpolatorSpec,
+        interpolator: interpolatorFor(interpolatorSpec),
+      };
+    }
 
-    this.applyEditorScroll(editorScrollTop);
+    this.applyEditorScroll(
+      this.lastPreviewScroll.interpolator(playerScrollTop),
+    );
   }
 
   /**

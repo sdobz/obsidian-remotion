@@ -2,7 +2,7 @@ import type { MarkdownView } from "obsidian";
 import { EditorView, Decoration } from "@codemirror/view";
 import { StateEffect, StateField, type Extension } from "@codemirror/state";
 import type { MarkdownDiagnostic, PreviewSpan } from "remotion-md";
-import type { PixelBand } from "./scroll";
+import type { Band } from "./scroll-math";
 
 /**
  * Editor Integration Module
@@ -140,11 +140,11 @@ export function clearEditorDiagnostics(view: EditorView) {
  * Returns null if the span is completely outside the viewport
  * Uses document coordinates (not viewport relative)
  */
-export function toPixelBand(
+export function toBand(
   span: PreviewSpan,
   editorView: EditorView,
   scrollTop: number,
-): PixelBand | null {
+): Band | null {
   const spanStart = span.pos ?? 0;
   const spanEnd = spanStart + (span.length || 0);
 
@@ -155,8 +155,8 @@ export function toPixelBand(
   if (startCoords && endCoords) {
     const height = endCoords.bottom - startCoords.top;
     // Document coordinates = scroll position + viewport-relative position
-    const top = scrollTop + startCoords.top;
-    return { top, height };
+    const center = scrollTop + startCoords.top + height / 2;
+    return { center, height };
   }
 
   // Span is outside viewport

@@ -4,7 +4,7 @@ import {
   slipPreviews,
   buildInterpolator,
   interpolatorFor,
-  Interpolator,
+  InterpolatorSpec,
 } from "./scroll-math";
 
 describe("parseTestCase", () => {
@@ -267,13 +267,13 @@ describe("buildInterpolator", () => {
     const bottomSpanInterpolator = tuneInterpolator(10, "span");
     const bottomPreviewInterpolator = tuneInterpolator(100, "preview");
 
-    const topDocument: Interpolator = {
+    const topDocument: InterpolatorSpec = {
       sourceTop: 0,
       sourceBot: 0,
       targetTop: 0,
       targetBot: 0,
     };
-    const botDocument: Interpolator = {
+    const botDocument: InterpolatorSpec = {
       sourceTop: 10,
       sourceBot: 10,
       targetTop: 100,
@@ -303,19 +303,19 @@ describe("buildInterpolator", () => {
     const belowBandInterpolator = tuneInterpolator(5.1, "span");
     const nearBotInterpolator = tuneInterpolator(7.9, "span");
 
-    const topInterpolator: Interpolator = {
+    const topInterpolator: InterpolatorSpec = {
       sourceTop: 0,
       sourceBot: 2,
       targetTop: 0,
       targetBot: 2,
     };
-    const bandInterpolator: Interpolator = {
+    const bandInterpolator: InterpolatorSpec = {
       sourceTop: 2,
       sourceBot: 5,
       targetTop: 2,
       targetBot: 5,
     };
-    const botInterpolator: Interpolator = {
+    const botInterpolator: InterpolatorSpec = {
       sourceTop: 5,
       sourceBot: 8,
       targetTop: 5,

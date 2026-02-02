@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import iframeHtml from "./iframe.html";
-import type { ScrollManager, ScrollDelegate, PixelBand } from "./scroll";
+import type { ScrollManager, ScrollDelegate } from "./scroll";
+import type { Band, NullArray } from "./scroll-math";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
 
@@ -34,9 +35,9 @@ export type IframeCommand =
   | {
       type: "reflow";
       bandScrollHeight: number;
-      bands: (PixelBand | null)[];
+      bands: NullArray<Band>;
       playerScrollHeight: number;
-      players: (PixelBand | null)[];
+      players: NullArray<Band>;
     }
   | {
       type: "bundle";
@@ -120,9 +121,9 @@ export class PreviewView extends ItemView implements ScrollDelegate {
 
   onReflow(
     bandScrollHeight: number,
-    bands: PixelBand[],
+    bands: NullArray<Band>,
     playerScrollHeight: number,
-    players: PixelBand[],
+    players: NullArray<Band>,
   ): void {
     if (!this.iframe?.contentWindow) return;
 
