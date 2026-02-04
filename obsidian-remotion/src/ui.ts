@@ -41,19 +41,19 @@ export class ViewManager {
     );
   }
 
-  async ensureSidebarTab(): Promise<void> {
+  async openPreviewPane(): Promise<void> {
     const leaves = this.app.workspace.getLeavesOfType(PREVIEW_VIEW_TYPE);
+    let leaf = leaves[0];
 
-    if (leaves.length > 0) {
-      // Tab already exists, do not reveal or activate it
-      return;
+    if (!leaf) {
+      const rightLeaf = this.app.workspace.getRightLeaf(false);
+      if (!rightLeaf) return;
+
+      await rightLeaf.setViewState({ type: PREVIEW_VIEW_TYPE, active: true });
+      leaf = rightLeaf;
     }
 
-    // Create a new leaf in the right sidebar without activating it
-    const rightLeaf = this.app.workspace.getRightLeaf(false);
-    if (!rightLeaf) return;
-
-    await rightLeaf.setViewState({ type: PREVIEW_VIEW_TYPE, active: false });
+    this.app.workspace.revealLeaf(leaf);
   }
 
   getVisiblePreviewView(): PreviewView | null {

@@ -9,22 +9,13 @@ export async function bundleVirtualModule(
   entryCode: string,
   entryName: string,
   esbuildInstance: typeof esbuild,
-  runtimeModules?: Set<string>,
 ): Promise<BundleResult> {
+  const builtins = ["fs", "path", "os", "crypto", "util", "stream", "events"];
+
   // Plugin to mock Node builtins that get bundled from remotion-md
   const nodeBuiltinsMockPlugin: esbuild.Plugin = {
     name: "node-builtins-mock",
     setup(build) {
-      const builtins = [
-        "fs",
-        "path",
-        "os",
-        "crypto",
-        "util",
-        "stream",
-        "events",
-      ];
-
       for (const builtin of builtins) {
         build.onResolve({ filter: new RegExp(`^${builtin}$`) }, (args) => {
           // Only mock if it's being bundled (not already external)
@@ -71,26 +62,27 @@ export async function bundleVirtualModule(
     },
   };
 
-  // Only externalize core frameworks that will be provided at runtime
-  // Node builtins are mocked by nodeBuiltinsMockPlugin
-  const externalModules = [
-    "obsidian",
-    "electron",
-    "react",
-    "react/jsx-runtime",
-    "react-dom",
-    "react-dom/client",
-    "remotion",
-    "@remotion/player",
-  ];
+  // Externalize all bare module imports (npm packages)
+  const externalizePackagesPlugin: esbuild.Plugin = {
+    name: "externalize-packages",
+    setup(build) {
+      build.onResolve({ filter: /.*/ }, (args) => {
+        const path = args.path;
+        if (
+          path.startsWith(".") ||
+          path.startsWith("/") ||
+          path === entryName ||
+          path.startsWith("/virtual/") ||
+          path === "virtual-entry" ||
+          builtins.includes(path)
+        ) {
+          return null;
+        }
 
-  if (runtimeModules) {
-    for (const mod of runtimeModules) {
-      if (!externalModules.includes(mod)) {
-        externalModules.push(mod);
-      }
-    }
-  }
+        return { path, external: true };
+      });
+    },
+  };
 
   try {
     const result = await esbuildInstance.build({
@@ -104,8 +96,11 @@ module.exports = sequence;
       format: "iife",
       write: false,
       logLevel: "error",
-      external: externalModules,
-      plugins: [nodeBuiltinsMockPlugin, virtualModulePlugin],
+      plugins: [
+        externalizePackagesPlugin,
+        nodeBuiltinsMockPlugin,
+        virtualModulePlugin,
+      ],
     });
 
     if (result.outputFiles.length > 0) {

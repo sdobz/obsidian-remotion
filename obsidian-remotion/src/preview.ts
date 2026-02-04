@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, WorkspaceLeaf, MarkdownView } from "obsidian";
 import iframeHtml from "./iframe.html";
 import type { ScrollManager, ScrollDelegate } from "./scroll";
 import type { Band, InterpolatorSpec, NullArray } from "./scroll-math";
@@ -24,6 +24,10 @@ export type PreviewMessage =
       playerScrollTop: number;
     }
   | {
+      type: "request-module";
+      id: string;
+    }
+  | {
       type: "iframe-ready";
     };
 
@@ -31,6 +35,14 @@ export type PreviewMessage =
 export type IframeCommand =
   | {
       type: "reset";
+    }
+  | {
+      type: "show-error";
+      message: string;
+      stack?: string;
+    }
+  | {
+      type: "clear-error";
     }
   | {
       type: "reflow";
@@ -52,6 +64,8 @@ export type IframeCommand =
 export class PreviewView extends ItemView implements ScrollDelegate {
   private iframe: HTMLIFrameElement | null = null;
   private scrollManager: ScrollManager | null = null;
+  private moduleCache: Map<string, unknown> = new Map();
+
   private handleMessage = (event: MessageEvent) => {
     const data = event.data as PreviewMessage | undefined;
     if (!data) return;
@@ -68,6 +82,9 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     } else if (data.type === "player-scroll") {
       // Player container was scrolled, map back to editor scroll
       this.scrollManager?.handlePlayerScroll(data.playerScrollTop);
+    } else if (data.type === "request-module") {
+      // Iframe is requesting a module - try to load and send it back
+      this.handleModuleRequest(data.id);
     }
   };
 
@@ -149,7 +166,7 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  private injectDependencies(requiredModules?: Set<string>) {
+  private injectDependencies() {
     if (!this.iframe?.contentWindow) {
       return;
     }
@@ -179,42 +196,76 @@ export class PreviewView extends ItemView implements ScrollDelegate {
         if (typeof winReq === "function") req = winReq;
       }
 
+      if (!req && typeof require === "function") {
+        req = require;
+      }
+
       if (typeof req === "function") {
-        // Set up __REMOTION_DEPS__ object with all dependencies
-        const deps: any = {};
+        // Store the require function for use in handleModuleRequest
+        this.requireFn = req;
 
-        // Always try to load core dependencies
-        const coreModules = [
-          "react",
-          "react/jsx-runtime",
-          "remotion",
-          "react-dom",
-          "react-dom/client",
-          "@remotion/player",
-        ];
-
-        // Add any additional runtime modules if specified
-        if (requiredModules) {
-          for (const mod of requiredModules) {
-            if (!coreModules.includes(mod)) {
-              coreModules.push(mod);
-            }
-          }
-        }
-
-        // Try to load each module
-        for (const modName of coreModules) {
-          try {
-            deps[modName] = req(modName);
-          } catch (e) {
-            // Silently ignore missing modules
-          }
-        }
-
-        (this.iframe.contentWindow as any).__REMOTION_DEPS__ = deps;
+        // Set up __REMOTION_DEPS__ object - initial deps will be populated on demand
+        (this.iframe.contentWindow as any).__REMOTION_DEPS__ =
+          (this.iframe.contentWindow as any).__REMOTION_DEPS__ || {};
       }
     } catch (e) {
       console.debug("Dependency injection failed:", e);
+    }
+  }
+
+  private requireFn: ((id: string) => unknown) | undefined;
+
+  private handleModuleRequest(moduleId: string): void {
+    if (!this.iframe?.contentWindow) return;
+
+    // Check cache first
+    if (this.moduleCache.has(moduleId)) {
+      const module = this.moduleCache.get(moduleId);
+      this.iframe.contentWindow.postMessage(
+        { type: "module-response", id: moduleId, module },
+        "*",
+      );
+      return;
+    }
+
+    try {
+      let module: unknown | undefined;
+
+      try {
+        if (this.requireFn) {
+          module = this.requireFn(moduleId);
+        } else {
+          module = undefined;
+        }
+      } catch {
+        const globals: Record<string, unknown> = {
+          react: (window as any).React,
+          "react-dom": (window as any).ReactDOM,
+          "react-dom/client": (window as any).ReactDOMClient,
+        };
+        module = globals[moduleId];
+      }
+
+      if (module === undefined) {
+        throw new Error(`Module not found: ${moduleId}`);
+      }
+
+      this.moduleCache.set(moduleId, module);
+      this.iframe.contentWindow.postMessage(
+        { type: "module-response", id: moduleId, module },
+        "*",
+      );
+    } catch (error) {
+      console.warn(`Failed to load module ${moduleId}:`, error);
+      // Send error response
+      this.iframe.contentWindow.postMessage(
+        {
+          type: "module-response",
+          id: moduleId,
+          error: `Module not found: ${moduleId}`,
+        },
+        "*",
+      );
     }
   }
 
@@ -224,21 +275,36 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  public updateBundleOutput(code: string, runtimeModules?: Set<string>) {
+  public updateBundleOutput(code: string) {
     if (!this.iframe?.contentWindow) {
       console.warn("[Preview] Cannot update bundle output, iframe not ready");
       return;
     }
 
-    // Reload dependencies if new modules are required
-    if (runtimeModules && runtimeModules.size > 0) {
-      this.injectDependencies(runtimeModules);
-    }
+    this.iframe.inert = true;
 
     const cmd: IframeCommand = {
       type: "bundle",
       payload: code,
     };
+    this.iframe.contentWindow.postMessage(cmd, "*");
+
+    setTimeout(() => {
+      if (this.iframe) {
+        this.iframe.inert = false;
+      }
+    }, 100);
+  }
+
+  public showErrorOverlay(message: string, stack?: string): void {
+    if (!this.iframe?.contentWindow) return;
+    const cmd: IframeCommand = { type: "show-error", message, stack };
+    this.iframe.contentWindow.postMessage(cmd, "*");
+  }
+
+  public clearErrorOverlay(): void {
+    if (!this.iframe?.contentWindow) return;
+    const cmd: IframeCommand = { type: "clear-error" };
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 }

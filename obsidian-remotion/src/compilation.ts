@@ -8,7 +8,6 @@ import {
   type ClassifiedBlock,
   type MarkdownDiagnostic,
   PreviewSpan,
-  getRuntimeModules,
   extractPreviewCallLocations,
 } from "remotion-md";
 
@@ -21,7 +20,6 @@ import ts from "typescript";
 export interface CompilationResult {
   previewLocations: PreviewSpan[];
   bundleCode: string;
-  runtimeModules: Set<string>;
   typecheckStatus: { status: "ok" | "error"; errorCount: number };
   bundleStatus: { status: "ok" | "error"; error?: string };
   diagnostics: MarkdownDiagnostic[];
@@ -104,9 +102,6 @@ export class CompilationManager {
       path.dirname(absoluteNotePath),
     );
 
-    // Extract runtime modules first (needed by both TS and esbuild)
-    const runtimeModules = getRuntimeModules(synthesized.code);
-
     // Update or create Language Service
     this.updateLanguageService(
       virtualFileName,
@@ -122,11 +117,7 @@ export class CompilationManager {
       this.getTypescriptDiagnostics(virtualFileName, synthesized.code),
 
       // esbuild bundling path (compiles TypeScript directly)
-      this.bundleTypeScriptSource(
-        synthesized.code,
-        virtualFileName,
-        runtimeModules,
-      ),
+      this.bundleTypeScriptSource(synthesized.code, virtualFileName),
     ]);
 
     const tsEnd = performance.now();
@@ -183,7 +174,6 @@ export class CompilationManager {
     return {
       previewLocations,
       bundleCode: bundleResult.code || "/* Bundle failed - see diagnostics */",
-      runtimeModules,
       typecheckStatus: { status: errorCount > 0 ? "error" : "ok", errorCount },
       bundleStatus: {
         status: bundleError ? "error" : "ok",
@@ -359,7 +349,6 @@ export class CompilationManager {
   private async bundleTypeScriptSource(
     sourceText: string,
     virtualFileName: string,
-    runtimeModules: Set<string>,
   ): Promise<{ code: string; error?: Error }> {
     if (!this.esbuildInstance) {
       const error = new Error("esbuild not available");
@@ -375,7 +364,6 @@ export class CompilationManager {
         sourceText,
         virtualFileName,
         this.esbuildInstance,
-        runtimeModules,
       );
       return result;
     } catch (err) {

@@ -56,6 +56,11 @@ export default class RemotionPlugin extends Plugin {
       (leaf: WorkspaceLeaf) => new PreviewView(leaf),
     );
 
+    this.addRibbonIcon("camera", "Open Remotion preview", async () => {
+      await this.viewManager.openPreviewPane();
+      this.onActiveLeafChange();
+    });
+
     // Add settings tab
     this.addSettingTab(new RemotionSettingTab(this.app, this));
 
@@ -72,9 +77,8 @@ export default class RemotionPlugin extends Plugin {
       ),
     );
 
-    // Open preview in right sidebar when workspace is ready
+    // Update state when workspace is ready
     this.app.workspace.onLayoutReady(() => {
-      void this.viewManager.ensureSidebarTab();
       this.onActiveLeafChange();
     });
   }
@@ -198,8 +202,14 @@ export default class RemotionPlugin extends Plugin {
     }
 
     // Send bundle output with semantic locations - previewView will handle pixel conversion
-    previewView.updateBundleOutput(result.bundleCode, result.runtimeModules);
+    previewView.updateBundleOutput(result.bundleCode);
     this.scrollManager?.handlePreviewSpans(result.previewLocations);
+
+    if (result.bundleStatus.status === "error" && result.bundleStatus.error) {
+      previewView.showErrorOverlay(result.bundleStatus.error);
+    } else {
+      previewView.clearErrorOverlay();
+    }
   }
 
   async onunload() {

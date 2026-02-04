@@ -117,6 +117,15 @@ function handleBundle(cmd: IframeCommand & { type: "bundle" }): void {
   }
 }
 
+function handleShowError(cmd: IframeCommand & { type: "show-error" }): void {
+  overlays.showError(cmd.message, cmd.stack ?? "");
+  overlays.hideLoading();
+}
+
+function handleClearError(): void {
+  overlays.clearError();
+}
+
 function handleScroll(cmd: IframeCommand & { type: "scroll" }): void {
   scroll.scrollTo(cmd.editorScrollTop);
 }
@@ -138,13 +147,19 @@ window.addEventListener("error", (event: ErrorEvent) => {
   sendMessage({ type: "runtime-error", error: { message, stack } });
 });
 
-window.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
-  event.preventDefault();
-  const message = event.reason?.message || String(event.reason) || "Unhandled Promise Rejection";
-  const stack = event.reason?.stack || "";
-  overlays.showError(message, stack);
-  sendMessage({ type: "runtime-error", error: { message, stack } });
-});
+window.addEventListener(
+  "unhandledrejection",
+  (event: PromiseRejectionEvent) => {
+    event.preventDefault();
+    const message =
+      event.reason?.message ||
+      String(event.reason) ||
+      "Unhandled Promise Rejection";
+    const stack = event.reason?.stack || "";
+    overlays.showError(message, stack);
+    sendMessage({ type: "runtime-error", error: { message, stack } });
+  },
+);
 
 window.addEventListener("message", (event: MessageEvent) => {
   const data = event.data as IframeCommand | undefined;
@@ -156,6 +171,10 @@ window.addEventListener("message", (event: MessageEvent) => {
     handleReflow(data as IframeCommand & { type: "reflow" });
   } else if (data.type === "bundle") {
     handleBundle(data as IframeCommand & { type: "bundle" });
+  } else if (data.type === "show-error") {
+    handleShowError(data as IframeCommand & { type: "show-error" });
+  } else if (data.type === "clear-error") {
+    handleClearError();
   } else if (data.type === "scroll") {
     handleScroll(data as IframeCommand & { type: "scroll" });
   }
