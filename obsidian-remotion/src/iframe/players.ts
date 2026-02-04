@@ -3,7 +3,7 @@
  * Manages React player rendering, DOM manipulation, lazy loading/unloading, and positioning
  */
 
-import type { NullArray, Band } from "../scroll-math";
+import type { NullArray, Band } from "../editor/scroll-math";
 import type { Sequence } from "./bundle";
 
 const UNLOAD_DEBOUNCE_MS = 300;

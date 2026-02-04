@@ -3,7 +3,7 @@
  * Renders preview bands and SVG links connecting bands to players
  */
 
-import type { NullArray, Band } from "../scroll-math";
+import type { NullArray, Band } from "../editor/scroll-math";
 
 export class BandsLinksRenderer {
   private currentBands: NullArray<Band> = [];

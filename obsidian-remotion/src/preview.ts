@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf, MarkdownView } from "obsidian";
 import iframeHtml from "./iframe.html";
-import type { ScrollManager, ScrollDelegate } from "./scroll";
-import type { Band, InterpolatorSpec, NullArray } from "./scroll-math";
+import type { Band, InterpolatorSpec, NullArray } from "./editor/scroll-math";
+import { ScrollDelegate, ScrollManager } from "./editor/scroll";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
 

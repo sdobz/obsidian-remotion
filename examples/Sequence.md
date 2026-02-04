@@ -2,6 +2,7 @@
 ```tsx
 import React from 'react';
 import { useCurrentFrame, interpolate, Series, Composition, Sequence } from 'remotion';
+
 const Title: React.FC<React.PropsWithChildren> = ({children}) => {
 	const frame = useCurrentFrame();
 	const opacity = interpolate(frame, [0, 30], [0, 1]);
@@ -30,8 +31,7 @@ const Title: React.FC<React.PropsWithChildren> = ({children}) => {
 
 
 ```tsx
-
-const First= preview(
+const First = preview(
 	() => <Title>Hello Remotion</Title>
 )
 

@@ -19,9 +19,9 @@ import {
   getEditorView,
   createAutocompleteExtension,
   createHoverExtension,
-} from "./editor";
-import { CompilationManager } from "./compilation";
-import { ScrollManager } from "./scroll";
+} from "./editor/index";
+import { CompilationManager } from "./toolchain/compilation";
+import { ScrollManager } from "./editor/scroll";
 
 export default class RemotionPlugin extends Plugin {
   public settings!: PluginSettings;

@@ -1,12 +1,13 @@
 
 ```tsx
-import React from 'react';
+import React from 'react'
 import { useCurrentFrame, interpolate } from 'remotion';
-
+ 
 const Title: React.FC = () => {
 	const frame = useCurrentFrame();
 	const opacity = interpolate(frame, [0, 30], [0, 1]);
 
+	
 	return (
 		<div
 			style={{
@@ -22,7 +23,7 @@ const Title: React.FC = () => {
 				opacity,
 			}}
 		>
-			Hello Remotion!
+			Hello Rem otion!
 		</div>
 	);
 };
@@ -30,6 +31,6 @@ const Title: React.FC = () => {
 
 ```tsx
 preview(
-	() => <Title />
+	() => <Title /> 
 )
 ```
