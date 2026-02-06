@@ -23,7 +23,7 @@ const Title: React.FC = () => {
 				opacity,
 			}}
 		>
-			Hello Rem otion!
+			Hello Remotion!
 		</div>
 	);
 };

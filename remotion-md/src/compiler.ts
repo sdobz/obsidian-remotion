@@ -13,8 +13,8 @@ export interface CompileResult {
 }
 
 /**
- * Compile virtual module with support for runtime modules
- * @param fileName Virtual file name (e.g., /virtual/path.tsx)
+ * Compile synthesized TypeScript module with support for runtime modules
+ * @param fileName File name (e.g., /path/to/Example.md.tsx - derived from Example.md)
  * @param sourceText Source code to compile
  * @param nodeModulesPaths Paths to search for node_modules
  * @param options Compilation options
@@ -28,8 +28,7 @@ export function compileVirtualModule(
     // Extract runtime modules from the code
     const runtimeModules = getRuntimeModules(sourceText);
 
-    // Derive the real directory for module resolution
-    // Virtual paths like /virtual/Basic.md.tsx need to resolve from a real directory
+    // Derive the directory for module resolution from the file's location
     const resolutionDirectory = getResolutionDirectory(nodeModulesPaths, path.dirname(fileName));
 
     const compilerOptions: ts.CompilerOptions = {

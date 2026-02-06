@@ -28,7 +28,7 @@ const PREVIEW_DEFAULTS = {
 
 function parseCliArgs(): { mdPath: string; config: RenderConfig; remotionArgs: string[] } {
     const args = process.argv.slice(2);
-    
+
     if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
         console.log(`
 remotion-md - Render Remotion videos from Markdown files
@@ -61,7 +61,7 @@ Examples:
 
     for (let i = 1; i < args.length; i++) {
         const arg = args[i];
-        
+
         if (arg === '--') {
             inRemotionArgs = true;
             continue;
@@ -142,11 +142,11 @@ async function main() {
 
     // Synthesize virtual module
     const synthesized = synthesizeVirtualModule(path.basename(mdPath), classified);
-    
+
     // Compile the synthesized module to extract preview locations
-    const virtualFileName = absoluteMdPath.replace(/\.md$/, '.tsx');
+    const virtualFileName = absoluteMdPath + '.tsx';
     const nodeModulesPaths = [path.join(process.cwd(), 'node_modules')];
-    
+
     console.log('[remotion-md] Compiling TypeScript...');
     const compiled = compileVirtualModule(virtualFileName, synthesized.code, nodeModulesPaths, { includeLib: true });
 
@@ -166,7 +166,7 @@ async function main() {
 
     // Extract preview locations
     const previewLocations = compiled.previewLocations;
-    
+
     if (previewLocations.length === 0) {
         console.error('Error: No preview() calls found in compiled code');
         console.error('This should not happen if preview() calls were detected in source.');
@@ -175,7 +175,7 @@ async function main() {
 
     // Use last preview as default composition
     const defaultCompositionId = `preview-${previewLocations.length - 1}`;
-    
+
     // Config fallback to defaults (runtime options will override in composition)
     const finalConfig: Required<RenderConfig> = {
         compositionId: config.compositionId || defaultCompositionId,
@@ -195,7 +195,7 @@ async function main() {
     const tempFile = path.join(tempDir, 'composition.tsx');
     // Use relative path from cwd so Remotion finds config in project root
     const relativeTempFile = path.relative(process.cwd(), tempFile);
-    
+
     // Generate a composition file that uses registerRoot
     const compositionCode = `
 import { Composition, registerRoot } from 'remotion';

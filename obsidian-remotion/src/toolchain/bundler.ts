@@ -61,13 +61,13 @@ async function bundleVirtualModule(
         namespace: "virtual",
       }));
       build.onResolve({ filter: /.*/ }, (args) => {
-        if (args.path === entryName || args.path.startsWith("/virtual/")) {
+        if (args.path === entryName) {
           return { path: args.path, namespace: "virtual" };
         }
         return null;
       });
       build.onLoad({ filter: /.*/, namespace: "virtual" }, (args) => {
-        if (args.path === entryName || args.path.startsWith("/virtual/")) {
+        if (args.path === entryName) {
           return { contents: entryCode, loader: "tsx" };
         }
         return null;
@@ -84,7 +84,6 @@ async function bundleVirtualModule(
           p.startsWith(".") ||
           p.startsWith("/") ||
           p === entryName ||
-          p.startsWith("/virtual/") ||
           p === "virtual-entry" ||
           builtins.includes(p)
         ) {

@@ -87,7 +87,7 @@ export class CompilationManager {
     }
 
     const absoluteNotePath = path.join(this.vaultRoot, notePath);
-    const virtualFileName = absoluteNotePath.replace(/\.md$/, ".tsx");
+    const virtualFileName = absoluteNotePath + ".tsx";
     const nodeModulesPaths = findNodeModulesPaths(
       this.vaultRoot,
       path.dirname(absoluteNotePath),

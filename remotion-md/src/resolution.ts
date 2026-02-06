@@ -79,12 +79,6 @@ export function createModuleResolver(
     );
 
     return (moduleNames: string[], containingFile: string) => {
-        // If the containing file is virtual, use a real path for resolution
-        // TypeScript's Node resolution needs a real file to walk up from
-        const realContainingFile = containingFile.startsWith('/virtual/')
-            ? path.join(resolutionDirectory, path.basename(containingFile))
-            : containingFile;
-
         return moduleNames.map((moduleName) => {
             // Use TypeScript's resolveModuleName which handles:
             // - Relative imports (./xxx, ../xxx)
@@ -93,7 +87,7 @@ export function createModuleResolver(
             // - Extension resolution
             const resolved = ts.resolveModuleName(
                 moduleName,
-                realContainingFile,
+                containingFile,
                 compilerOptions,
                 host,
                 resolutionCache,
