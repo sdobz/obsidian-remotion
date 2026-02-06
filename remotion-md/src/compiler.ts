@@ -3,23 +3,13 @@ import { getRuntimeModules } from './moduleExtraction';
 import * as fs from 'fs';
 import * as path from 'path';
 import { extractPreviewCallLocations, PreviewSpan } from 'previewLocations';
+import { getResolutionDirectory, createModuleResolver } from './resolution';
 
 export interface CompileResult {
     code: string;
     diagnostics: readonly ts.Diagnostic[];
     runtimeModules: Set<string>;
     previewLocations: PreviewSpan[];
-}
-
-/**
- * Derive the real directory for module resolution from nodeModulesPaths.
- * Takes the first path (closest to file) and returns its parent directory.
- * E.g., /path/examples/node_modules -> /path/examples
- */
-export function getResolutionDirectory(nodeModulesPaths: string[], fallback: string): string {
-    return nodeModulesPaths.length > 0
-        ? path.dirname(nodeModulesPaths[0])
-        : fallback;
 }
 
 /**
@@ -85,7 +75,7 @@ export function compileVirtualModule(
             // Use TypeScript's built-in getDefaultLibFilePath to get proper lib files
             return ts.getDefaultLibFilePath(options);
         },
-        writeFile: () => {},
+        writeFile: () => { },
         getCurrentDirectory: () => {
             // Return the real directory (not virtual path)
             // This allows TypeScript's Node resolution to walk up and find:
@@ -119,39 +109,15 @@ export function compileVirtualModule(
         getCanonicalFileName: (name) => name,
         useCaseSensitiveFileNames: () => true,
         getNewLine: () => '\n',
-        resolveModuleNames: (moduleNames, containingFile) => {
-            // Use TypeScript's built-in module resolution
-            const currentDir = host.getCurrentDirectory();
-            const resolutionCache = ts.createModuleResolutionCache(currentDir, host.getCanonicalFileName);
-            
-            // If the containing file is virtual, use a real path for resolution
-            // TypeScript's Node resolution needs a real file to walk up from
-            const realContainingFile = containingFile.startsWith('/virtual/')
-                ? path.join(currentDir, path.basename(containingFile))
-                : containingFile;
-            
-            return moduleNames.map(moduleName => {
-                // Use TypeScript's resolveModuleName which handles:
-                // - Relative imports (./xxx, ../xxx)
-                // - Node module resolution
-                // - package.json main/types fields
-                // - Extension resolution
-                const resolved = ts.resolveModuleName(
-                    moduleName,
-                    realContainingFile,
-                    compilerOptions,
-                    host,
-                    resolutionCache
-                );
-                
-                if (resolved.resolvedModule) {
-                    return resolved.resolvedModule;
-                }
-                
-                return undefined;
-            });
-        },
     };
+
+    // Add module resolver after host is defined
+    host.resolveModuleNames = createModuleResolver(
+        resolutionDirectory,
+        compilerOptions,
+        host
+    );
+
 
     let output = '';
     const program = ts.createProgram([fileName], compilerOptions, host);

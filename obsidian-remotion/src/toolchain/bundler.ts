@@ -106,7 +106,7 @@ async function bundleVirtualModule(
       logLevel: "error",
       plugins: [
         externalizePackagesPlugin,
-        nodeBuiltinsMockPlugin,
+        // nodeBuiltinsMockPlugin,
         virtualModulePlugin,
       ],
     });

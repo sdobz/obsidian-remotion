@@ -12,59 +12,57 @@ export interface PlayerStatus {
 /** Message received from iframe */
 export type PreviewMessage =
   | {
-      type: "runtime-error";
-      error?: { message?: string; stack?: string };
-    }
+    type: "runtime-error";
+    error?: { message?: string; stack?: string };
+  }
   | {
-      type: "player-status";
-      players: PlayerStatus[];
-    }
+    type: "player-status";
+    players: PlayerStatus[];
+  }
   | {
-      type: "player-scroll";
-      playerScrollTop: number;
-    }
+    type: "player-scroll";
+    playerScrollTop: number;
+  }
   | {
-      type: "request-module";
-      id: string;
-    }
-  | {
-      type: "iframe-ready";
-    };
+    type: "iframe-ready";
+  };
 
 /** Message sent to iframe */
 export type IframeCommand =
   | {
-      type: "reset";
-    }
+    type: "reset";
+  }
   | {
-      type: "show-error";
-      message: string;
-      stack?: string;
-    }
+    type: "show-error";
+    message: string;
+    stack?: string;
+  }
   | {
-      type: "clear-error";
-    }
+    type: "clear-error";
+  }
   | {
-      type: "reflow";
-      bandScrollHeight: number;
-      bands: NullArray<Band>;
-      playerScrollHeight: number;
-      players: NullArray<Band>;
-      interpolatorSpecs: InterpolatorSpec[];
-    }
+    type: "reflow";
+    bandScrollHeight: number;
+    bands: NullArray<Band>;
+    playerScrollHeight: number;
+    players: NullArray<Band>;
+    interpolatorSpecs: InterpolatorSpec[];
+  }
   | {
-      type: "bundle";
-      payload: string;
-    }
+    type: "bundle";
+    payload: string;
+  }
   | {
-      type: "scroll";
-      editorScrollTop: number;
-    };
+    type: "scroll";
+    editorScrollTop: number;
+  };
 
 export class PreviewView extends ItemView implements ScrollDelegate {
   private iframe: HTMLIFrameElement | null = null;
   private scrollManager: ScrollManager | null = null;
-  private moduleCache: Map<string, unknown> = new Map();
+  private requireFn: ((id: string) => unknown) | undefined;
+  // Vault-scoped module cache - persists across file switches
+  private static moduleCache: Map<string, unknown> = new Map();
 
   private handleMessage = (event: MessageEvent) => {
     const data = event.data as PreviewMessage | undefined;
@@ -82,9 +80,6 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     } else if (data.type === "player-scroll") {
       // Player container was scrolled, map back to editor scroll
       this.scrollManager?.handlePlayerScroll(data.playerScrollTop);
-    } else if (data.type === "request-module") {
-      // Iframe is requesting a module - try to load and send it back
-      this.handleModuleRequest(data.id);
     }
   };
 
@@ -166,118 +161,126 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  private injectDependencies() {
+  private setupRequireFunction(): void {
+    try {
+      const { createRequire } = require("module");
+      const adapter = this.app.vault.adapter as any;
+      if (adapter && typeof adapter.getBasePath === "function") {
+        const basePath = adapter.getBasePath();
+        const vaultRoot =
+          basePath && basePath.startsWith("app://")
+            ? basePath.replace(/^app:\/\/[^\/]+/, "")
+            : basePath;
+        if (vaultRoot) {
+          const anchor = require("path").join(vaultRoot, "package.json");
+          this.requireFn = createRequire(anchor);
+          return;
+        }
+      }
+    } catch (e) {
+      // Silently fail if createRequire is unavailable
+    }
+
+    const winReq = (window as any).require;
+    if (typeof winReq === "function") {
+      this.requireFn = winReq;
+      return;
+    }
+
+    if (typeof require === "function") {
+      this.requireFn = require;
+    }
+  }
+
+  /**
+   * Pre-inject all dependencies into iframe before bundle execution
+   * Core dependencies + user imports from runtimeModules
+   * Fails immediately with error overlay if any module cannot be loaded
+   */
+  private injectDependencies(runtimeModules: Set<string> = new Set()): void {
     if (!this.iframe?.contentWindow) {
       return;
     }
 
-    try {
-      let req: ((id: string) => unknown) | undefined;
-      try {
-        const { createRequire } = require("module");
-        const adapter = this.app.vault.adapter as any;
-        if (adapter && typeof adapter.getBasePath === "function") {
-          const basePath = adapter.getBasePath();
-          const vaultRoot =
-            basePath && basePath.startsWith("app://")
-              ? basePath.replace(/^app:\/\/[^\/]+/, "")
-              : basePath;
-          if (vaultRoot) {
-            const anchor = require("path").join(vaultRoot, "package.json");
-            req = createRequire(anchor);
-          }
-        }
-      } catch (e) {
-        // Silently fail if createRequire is unavailable
-      }
-
-      if (!req) {
-        const winReq = (window as any).require;
-        if (typeof winReq === "function") req = winReq;
-      }
-
-      if (!req && typeof require === "function") {
-        req = require;
-      }
-
-      if (typeof req === "function") {
-        // Store the require function for use in handleModuleRequest
-        this.requireFn = req;
-
-        // Set up __REMOTION_DEPS__ object - initial deps will be populated on demand
-        (this.iframe.contentWindow as any).__REMOTION_DEPS__ =
-          (this.iframe.contentWindow as any).__REMOTION_DEPS__ || {};
-      }
-    } catch (e) {
-      console.debug("Dependency injection failed:", e);
+    if (!this.requireFn) {
+      this.setupRequireFunction();
     }
-  }
 
-  private requireFn: ((id: string) => unknown) | undefined;
-
-  private handleModuleRequest(moduleId: string): void {
-    if (!this.iframe?.contentWindow) return;
-
-    // Check cache first
-    if (this.moduleCache.has(moduleId)) {
-      const module = this.moduleCache.get(moduleId);
-      this.iframe.contentWindow.postMessage(
-        { type: "module-response", id: moduleId, module },
-        "*",
-      );
+    if (!this.requireFn) {
+      const error = "Cannot load modules: require function not available";
+      console.error("[remotion]", error);
+      this.showErrorOverlay(error);
       return;
     }
 
-    try {
-      let module: unknown | undefined;
+    const coreModules = [
+      "react",
+      "react-dom/client",
+      "@remotion/player",
+      "remotion",
+    ];
+
+    const allModules = [...coreModules, ...Array.from(runtimeModules)];
+    const deps: Record<string, unknown> = {};
+    const errors: string[] = [];
+
+    for (const moduleId of allModules) {
+      // Check cache first (vault-scoped)
+      if (PreviewView.moduleCache.has(moduleId)) {
+        deps[moduleId] = PreviewView.moduleCache.get(moduleId)!;
+        continue;
+      }
 
       try {
-        if (this.requireFn) {
-          module = this.requireFn(moduleId);
-        } else {
-          module = undefined;
+        const module = this.requireFn(moduleId);
+        if (module === undefined) {
+          throw new Error(`Module '${moduleId}' resolved to undefined`);
         }
-      } catch {
-        const globals: Record<string, unknown> = {
-          react: (window as any).React,
-          "react-dom": (window as any).ReactDOM,
-          "react-dom/client": (window as any).ReactDOMClient,
-        };
-        module = globals[moduleId];
+        deps[moduleId] = module;
+        PreviewView.moduleCache.set(moduleId, module);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`Failed to load '${moduleId}': ${message}`);
+        console.error(`[remotion] Failed to load module '${moduleId}':`, error);
       }
-
-      if (module === undefined) {
-        throw new Error(`Module not found: ${moduleId}`);
-      }
-
-      this.moduleCache.set(moduleId, module);
-      this.iframe.contentWindow.postMessage(
-        { type: "module-response", id: moduleId, module },
-        "*",
-      );
-    } catch (error) {
-      console.warn(`Failed to load module ${moduleId}:`, error);
-      // Send error response
-      this.iframe.contentWindow.postMessage(
-        {
-          type: "module-response",
-          id: moduleId,
-          error: `Module not found: ${moduleId}`,
-        },
-        "*",
-      );
     }
+
+    // If any required modules failed, show error overlay immediately
+    if (errors.length > 0) {
+      const errorMessage = `Module loading failed:\n${errors.join("\n")}`;
+      this.showErrorOverlay(errorMessage);
+      return;
+    }
+
+    // Inject all dependencies into iframe
+    (this.iframe.contentWindow as any).__REMOTION_DEPS__ = deps;
+
+    // Also expose require for the bundle
+    (this.iframe.contentWindow as any).require = (id: string) => {
+      if (deps[id] !== undefined) return deps[id];
+      throw new Error(`Module not found: ${id}`);
+    };
   }
 
-  public resetForNewFile() {
+  public resetForNewFile(): void {
     if (!this.iframe?.contentWindow) return;
     const cmd: IframeCommand = { type: "reset" };
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  public updateBundleOutput(code: string) {
+  public updateBundleOutput(code: string, runtimeModules: Set<string>): void {
     if (!this.iframe?.contentWindow) {
       console.warn("[Preview] Cannot update bundle output, iframe not ready");
+      return;
+    }
+
+    // Pre-inject all dependencies before sending bundle
+    this.injectDependencies(runtimeModules);
+
+    // Check if injection failed (error overlay would be shown)
+    const deps = (this.iframe.contentWindow as any).__REMOTION_DEPS__;
+    if (!deps || Object.keys(deps).length === 0) {
+      console.warn("[Preview] Dependency injection failed, not sending bundle");
       return;
     }
 

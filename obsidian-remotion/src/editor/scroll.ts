@@ -2,7 +2,6 @@ import type { EditorView } from "@codemirror/view";
 import type { PreviewSpan } from "remotion-md";
 import type {
   Band,
-  Interpolator,
   InterpolatorSpec,
   NullArray,
 } from "./scroll-math";
@@ -13,8 +12,7 @@ import {
   interpolatorFor,
   slipPreviews,
 } from "./scroll-math";
-import { toBand } from "./editor";
-import { debug } from "console";
+import { toBand } from "./index";
 
 /**
  * Delegate interface for ScrollManager to communicate viewport, bands, and positions

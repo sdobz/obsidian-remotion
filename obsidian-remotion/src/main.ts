@@ -201,8 +201,8 @@ export default class RemotionPlugin extends Plugin {
       }
     }
 
-    // Send bundle output with semantic locations - previewView will handle pixel conversion
-    previewView.updateBundleOutput(result.bundleCode);
+    // Send bundle output with runtime modules and semantic locations
+    previewView.updateBundleOutput(result.bundleCode, result.runtimeModules);
     this.scrollManager?.handlePreviewSpans(result.previewLocations);
 
     if (result.bundleStatus.status === "error" && result.bundleStatus.error) {

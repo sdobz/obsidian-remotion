@@ -15,62 +15,22 @@ export type Sequence = {
 
 export class BundleManager {
   private currentSequence: Sequence | null = null;
-  private __modules__: Record<string, unknown> = {};
-  private pendingModuleRequests: Map<string, Promise<unknown>> = new Map();
 
   constructor() {
     // Expose require globally so esbuild's bundle can use it
+    // All dependencies are pre-injected by parent window
     (window as any).require = this.require.bind(this);
-    (window as any).__REMOTION_DEPS__ = (window as any).__REMOTION_DEPS__ || {};
-
-    // Listen for module responses from parent
-    window.addEventListener("message", (event) => {
-      if (event.data?.type === "module-response") {
-        const { id, module } = event.data;
-        (window as any).__REMOTION_DEPS__[id] = module;
-        // Wake up any pending require calls
-        if (this.pendingModuleRequests.has(id)) {
-          this.pendingModuleRequests.delete(id);
-        }
-      }
-    });
   }
 
-  // Minimal require polyfill - checks __modules__ and window globals
+  // Minimal synchronous require - all modules are pre-injected
   private require(id: string): unknown {
-    if (this.__modules__[id]) return this.__modules__[id];
-    if ((window as any)[id]) return (window as any)[id];
-    if (
-      (window as any).__REMOTION_DEPS__ &&
-      (window as any).__REMOTION_DEPS__[id]
-    )
-      return (window as any).__REMOTION_DEPS__[id];
-
-    // Module not found - request from parent
-    if (!this.pendingModuleRequests.has(id)) {
-      window.parent.postMessage({ type: "request-module", id }, "*");
-
-      // Wait for module to be loaded (with timeout)
-      const startTime = Date.now();
-      const maxWait = 5000;
-      while (Date.now() - startTime < maxWait) {
-        if (
-          (window as any).__REMOTION_DEPS__ &&
-          (window as any).__REMOTION_DEPS__[id]
-        ) {
-          return (window as any).__REMOTION_DEPS__[id];
-        }
-        // Busy wait is not ideal but necessary for sync require
-      }
+    const deps = (window as any).__REMOTION_DEPS__;
+    if (deps && deps[id] !== undefined) {
+      return deps[id];
     }
 
-    if (
-      (window as any).__REMOTION_DEPS__ &&
-      (window as any).__REMOTION_DEPS__[id]
-    )
-      return (window as any).__REMOTION_DEPS__[id];
-
-    throw new Error("Module not found: " + id);
+    // Module not pre-injected - this is an error
+    throw new Error(`Module not found: ${id}. All modules must be pre-injected.`);
   }
 
   /**

@@ -4,7 +4,5 @@ export * from "./compiler";
 export * from "./diagnostics";
 export * from "./moduleExtraction";
 export * from "./previewLocations";
+export * from "./resolution";
 export type { PreviewSpan } from "./previewLocations";
-
-// Re-export specific utilities
-export { getResolutionDirectory } from "./compiler";

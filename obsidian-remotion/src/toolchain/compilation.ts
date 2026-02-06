@@ -5,6 +5,7 @@ import {
   synthesizeVirtualModule,
   mapDiagnosticsToMarkdown,
   parseBundleError,
+  getRuntimeModules,
   type ClassifiedBlock,
   type MarkdownDiagnostic,
   type PreviewSpan,
@@ -24,6 +25,7 @@ import { findNodeModulesPaths } from "./resolution";
 export interface CompilationResult {
   previewLocations: PreviewSpan[];
   bundleCode: string;
+  runtimeModules: Set<string>;
   typecheckStatus: { status: "ok" | "error"; errorCount: number };
   bundleStatus: { status: "ok" | "error"; error?: string };
   diagnostics: MarkdownDiagnostic[];
@@ -160,9 +162,13 @@ export class CompilationManager {
         : String(bundleResult.error)
       : undefined;
 
+    // Extract runtime modules from synthesized code
+    const runtimeModules = getRuntimeModules(synthesized.code);
+
     return {
       previewLocations,
       bundleCode: bundleResult.code || "/* Bundle failed - see diagnostics */",
+      runtimeModules,
       typecheckStatus: { status: errorCount > 0 ? "error" : "ok", errorCount },
       bundleStatus: {
         status: bundleError ? "error" : "ok",

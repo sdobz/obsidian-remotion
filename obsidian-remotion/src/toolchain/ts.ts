@@ -3,6 +3,7 @@ import type { MarkdownView } from "obsidian";
 import { extractPreviewCallLocations, type PreviewSpan } from "remotion-md";
 import fs from "fs";
 import path from "path";
+import { getResolutionDirectory, createModuleResolver } from "./resolution";
 
 interface BlockMap {
   synthStartLine: number;
@@ -185,10 +186,10 @@ export function createLanguageService(
   languageService: ts.LanguageService;
   languageServiceHost: ts.LanguageServiceHost;
 } {
-  const resolutionDirectory =
-    nodeModulesPaths.length > 0
-      ? path.dirname(nodeModulesPaths[0])
-      : path.dirname(virtualFileName);
+  const resolutionDirectory = getResolutionDirectory(
+    nodeModulesPaths,
+    path.dirname(virtualFileName),
+  );
 
   const compilerOptions: ts.CompilerOptions = {
     jsx: ts.JsxEmit.React,
@@ -241,88 +242,36 @@ export function createLanguageService(
         return undefined;
       }
     },
-    resolveModuleNames: (moduleNames, containingFile) => {
-      const resolutionCache = ts.createModuleResolutionCache(
-        resolutionDirectory,
-        (f) => f,
-      );
-      const realContainingFile = containingFile.startsWith("/virtual/")
-        ? path.join(resolutionDirectory, path.basename(containingFile))
-        : containingFile;
-
-      return moduleNames.map((moduleName) => {
-        const resolved = ts.resolveModuleName(
-          moduleName,
-          realContainingFile,
-          compilerOptions,
-          {
-            fileExists: host.fileExists!,
-            readFile: host.readFile!,
-          },
-          resolutionCache,
-        );
-        return resolved.resolvedModule;
-      });
-    },
   };
 
-  return {
-    languageService: ts.createLanguageService(
-      host,
-      ts.createDocumentRegistry(),
-    ),
-    languageServiceHost: host,
-  };
+  // Create module resolver after host is defined
+  const moduleResolver = createModuleResolver(
+    resolutionDirectory,
+    compilerOptions,
+    {
+      fileExists: host.fileExists!,
+      readFile: host.readFile!,
+      getCurrentDirectory: () => resolutionDirectory,
+      getDirectories: () => [],
+    } as ts.ModuleResolutionHost,
+  );
+
+  // Add module resolver to host
+  host.resolveModuleNames = moduleResolver;
+
+  const languageService = ts.createLanguageService(host, ts.createDocumentRegistry());
+  return { languageService, languageServiceHost: host };
 }
 
-/**
- * Extracts Remotion preview call locations from the virtual module.
- * Uses the TypeScript AST to find @preview() calls.
- */
-export function getPreviewCallLocations(
-  languageService: ts.LanguageService | null,
-  virtualFileName: string,
-): PreviewSpan[] {
-  if (!languageService) return [];
-  try {
-    const program = languageService.getProgram();
-    const sourceFile = program?.getSourceFile(virtualFileName);
-    return sourceFile ? extractPreviewCallLocations(sourceFile) : [];
-  } catch (err) {
-    console.error("[remotion] Preview extraction failed:", err);
-    return [];
-  }
-}
-
-/**
- * Wraps TypeScript language service queries with automatic coordinate mapping.
- * Reduces parameter passing by caching state (service, virtualFileName, mapper).
- */
 export class LanguageServiceQueries {
-  private languageService: ts.LanguageService | null;
-  private virtualFileName: string;
   private mapper: CoordinateMapper;
-  private synthCode: string;
 
   constructor(
-    languageService: ts.LanguageService | null,
-    virtualFileName: string,
-    synthCode: string,
+    private languageService: ts.LanguageService,
+    private virtualFileName: string,
+    private synthCode: string,
   ) {
-    this.languageService = languageService;
-    this.virtualFileName = virtualFileName;
-    this.synthCode = synthCode;
     this.mapper = new CoordinateMapper(synthCode);
-  }
-
-  private mapToVirtualOffset(
-    markdownText: string,
-    markdownPos: number,
-  ): number | null {
-    const { line, column } = posToLineColumn(markdownText, markdownPos);
-    const virtualPos = this.mapper.markdownToVirtual(line, column);
-    if (!virtualPos) return null;
-    return lineColumnToPos(this.synthCode, virtualPos.line, virtualPos.column);
   }
 
   async getCompletions(
@@ -330,27 +279,34 @@ export class LanguageServiceQueries {
     markdownPos: number,
     prefix?: string,
   ): Promise<ts.CompletionEntry[]> {
-    if (!this.languageService) return [];
-    const virtualOffset = this.mapToVirtualOffset(markdownText, markdownPos);
-    if (virtualOffset === null) return [];
-    try {
-      const completions = this.languageService.getCompletionsAtPosition(
-        this.virtualFileName,
-        virtualOffset,
-        { includeCompletionsWithInsertText: true },
+    const { line: markdownLine, column: markdownColumn } = posToLineColumn(
+      markdownText,
+      markdownPos,
+    );
+    const virtualPos = this.mapper.markdownToVirtual(
+      markdownLine,
+      markdownColumn,
+    );
+    if (!virtualPos) return [];
+
+    const offset = lineColumnToPos(
+      this.synthCode,
+      virtualPos.line,
+      virtualPos.column,
+    );
+    const completions = this.languageService.getCompletionsAtPosition(
+      this.virtualFileName,
+      offset,
+      {},
+    );
+    if (!completions) return [];
+
+    if (prefix) {
+      return completions.entries.filter((c) =>
+        c.name.toLowerCase().startsWith(prefix.toLowerCase()),
       );
-      if (!completions) return [];
-      let entries = completions.entries;
-      if (prefix && prefix.length > 0) {
-        entries = entries.filter((e) =>
-          e.name.toLowerCase().startsWith(prefix.toLowerCase()),
-        );
-      }
-      return entries;
-    } catch (err) {
-      console.error("[remotion] Completions failed:", err);
-      return [];
     }
+    return completions.entries;
   }
 
   async getQuickInfo(
@@ -360,112 +316,83 @@ export class LanguageServiceQueries {
     displayParts: ts.SymbolDisplayPart[];
     documentation: ts.SymbolDisplayPart[];
   } | null> {
-    if (!this.languageService) return null;
-    const virtualOffset = this.mapToVirtualOffset(markdownText, markdownPos);
-    if (virtualOffset === null) return null;
-    try {
-      const quickInfo = this.languageService.getQuickInfoAtPosition(
-        this.virtualFileName,
-        virtualOffset,
-      );
-      if (!quickInfo) return null;
-      return {
-        displayParts: quickInfo.displayParts || [],
-        documentation: quickInfo.documentation || [],
-      };
-    } catch (err) {
-      console.error("[remotion] Quick info failed:", err);
-      return null;
-    }
+    const { line: markdownLine, column: markdownColumn } = posToLineColumn(
+      markdownText,
+      markdownPos,
+    );
+    const virtualPos = this.mapper.markdownToVirtual(
+      markdownLine,
+      markdownColumn,
+    );
+    if (!virtualPos) return null;
+
+    const offset = lineColumnToPos(
+      this.synthCode,
+      virtualPos.line,
+      virtualPos.column,
+    );
+    const quickInfo = this.languageService.getQuickInfoAtPosition(
+      this.virtualFileName,
+      offset,
+    );
+    if (!quickInfo) return null;
+
+    return {
+      displayParts: quickInfo.displayParts || [],
+      documentation: quickInfo.documentation || [],
+    };
   }
 
   async getDefinition(
     markdownText: string,
     markdownPos: number,
   ): Promise<{ filePath: string; line: number; column: number } | null> {
-    if (!this.languageService) return null;
-    const virtualOffset = this.mapToVirtualOffset(markdownText, markdownPos);
-    if (virtualOffset === null) return null;
-    try {
-      const definitions = this.languageService.getDefinitionAtPosition(
-        this.virtualFileName,
-        virtualOffset,
-      );
-      if (!definitions || definitions.length === 0) return null;
-      const def = definitions[0];
-      if (def.fileName === this.virtualFileName) {
-        const defLineCol = posToLineColumn(this.synthCode, def.textSpan.start);
-        const markdownLine = this.mapper.virtualLineToMarkdown(defLineCol.line);
-        return {
-          filePath: "",
-          line: markdownLine,
-          column: defLineCol.column,
-        };
-      }
-      return { filePath: def.fileName, line: def.textSpan.start, column: 0 };
-    } catch (err) {
-      console.error("[remotion] Definition lookup failed:", err);
-      return null;
+    const { line: markdownLine, column: markdownColumn } = posToLineColumn(
+      markdownText,
+      markdownPos,
+    );
+    const virtualPos = this.mapper.markdownToVirtual(
+      markdownLine,
+      markdownColumn,
+    );
+    if (!virtualPos) return null;
+
+    const offset = lineColumnToPos(
+      this.synthCode,
+      virtualPos.line,
+      virtualPos.column,
+    );
+    const definitions = this.languageService.getDefinitionAtPosition(
+      this.virtualFileName,
+      offset,
+    );
+    if (!definitions || definitions.length === 0) return null;
+
+    const def = definitions[0];
+    if (def.fileName !== this.virtualFileName) {
+      const { line, column } = posToLineColumn(def.fileName, def.textSpan.start);
+      return { filePath: def.fileName, line, column };
     }
+
+    const { line: defLine, column: defColumn } = posToLineColumn(
+      this.synthCode,
+      def.textSpan.start,
+    );
+    const markdownDefLine = this.mapper.virtualLineToMarkdown(defLine);
+    return {
+      filePath: this.virtualFileName,
+      line: markdownDefLine,
+      column: defColumn,
+    };
   }
 }
 
-// Public API: Export wrapped functions that use the class
-export async function getCompletionsAtPosition(
+export function getPreviewCallLocations(
   languageService: ts.LanguageService | null,
-  view: MarkdownView | null,
   virtualFileName: string,
-  markdownPos: number,
-  synthCode: string,
-  prefix?: string,
-): Promise<ts.CompletionEntry[]> {
-  if (!languageService || !view) return [];
-  const queries = new LanguageServiceQueries(
-    languageService,
-    virtualFileName,
-    synthCode,
-  );
-  return queries.getCompletions(view.editor.getValue(), markdownPos, prefix);
-}
-
-export async function getQuickInfoAtPosition(
-  languageService: ts.LanguageService | null,
-  view: MarkdownView | null,
-  virtualFileName: string,
-  markdownPos: number,
-  synthCode: string,
-): Promise<{
-  displayParts: ts.SymbolDisplayPart[];
-  documentation: ts.SymbolDisplayPart[];
-} | null> {
-  if (!languageService || !view) return null;
-  const queries = new LanguageServiceQueries(
-    languageService,
-    virtualFileName,
-    synthCode,
-  );
-  return queries.getQuickInfo(view.editor.getValue(), markdownPos);
-}
-
-export async function getDefinitionAtPosition(
-  languageService: ts.LanguageService | null,
-  view: MarkdownView | null,
-  virtualFileName: string,
-  markdownPos: number,
-  synthCode: string,
-): Promise<{ filePath: string; line: number; column: number } | null> {
-  if (!languageService || !view) return null;
-  const queries = new LanguageServiceQueries(
-    languageService,
-    virtualFileName,
-    synthCode,
-  );
-  const result = await queries.getDefinition(
-    view.editor.getValue(),
-    markdownPos,
-  );
-  if (result && view.file) {
-    result.filePath = view.file.path;
-  }
-  return result;
+): PreviewSpan[] {
+  if (!languageService) return [];
+  const sourceFile = languageService.getProgram()?.getSourceFile(virtualFileName);
+  if (!sourceFile) return [];
+  return extractPreviewCallLocations(sourceFile);
 }
