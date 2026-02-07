@@ -5,16 +5,21 @@
   "type": "module",
   "description": "Example package for Obsidian Remotion preview",
   "dependencies": {
-    "@remotion/cli": "^4.0.414",
-    "@remotion/media": "^4.0.417",
-    "@remotion/player": "^4.0.0",
+    "@remotion/cli": "4.0.417",
+    "@remotion/media": "4.0.417",
+    "@remotion/player": "4.0.417",
     "esbuild": "^0.27.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "remotion": "^4.0.0",
+    "remotion": "4.0.417",
     "remotion-md": "*"
   },
   "devDependencies": {
     "@types/react": "^19.2.10"
+  },
+  "resolutions": {
+    "remotion": "4.0.417",
+    "@remotion/player": "4.0.417",
+    "@remotion/media": "4.0.417"
   }
 }

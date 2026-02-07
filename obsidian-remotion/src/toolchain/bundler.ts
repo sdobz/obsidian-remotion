@@ -152,9 +152,10 @@ export async function bundleTypeScriptSource(
   }
 }
 
-export async function bundleModule(
-  moduleId: string,
+export async function bundleDependenciesBundle(
+  moduleIds: string[],
   esbuildInstance: typeof esbuild | null,
+  nodeModulesPaths: string[] = [],
 ): Promise<BundleResult> {
   if (!esbuildInstance) {
     return {
@@ -164,14 +165,26 @@ export async function bundleModule(
   }
 
   try {
+    // Create a virtual entry point that re-exports all dependencies
+    // Import the entire module namespace since many ESM packages don't have default exports
+    const entryCode = moduleIds
+      .map((id, idx) => `import * as m${idx} from '${id}';`)
+      .join('\n') + '\n' +
+      moduleIds.map((id, idx) => `export { m${idx} };`).join('\n');
+
     const result = await esbuildInstance.build({
-      entryPoints: [moduleId],
+      stdin: {
+        contents: entryCode,
+        loader: "js",
+        resolveDir: nodeModulesPaths[0] || process.cwd(),
+      },
       bundle: true,
       platform: "browser",
       format: "cjs",
       write: false,
       minify: false,
       logLevel: "error",
+      nodePaths: nodeModulesPaths,
     });
 
     if (result.outputFiles.length > 0) {
@@ -181,7 +194,7 @@ export async function bundleModule(
     return { code: "" };
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    console.error(`[bundler] Failed to bundle module ${moduleId}:`, error);
+    console.error("[bundler] Failed to bundle dependencies:", error);
     return { code: "", error };
   }
 }

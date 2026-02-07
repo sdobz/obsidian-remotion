@@ -19,7 +19,7 @@ import {
   mapPreviewLocationsToMarkdown,
   LanguageServiceQueries,
 } from "./ts";
-import { loadEsbuild, bundleTypeScriptSource, bundleModule } from "./bundler";
+import { loadEsbuild, bundleTypeScriptSource, bundleDependenciesBundle } from "./bundler";
 import { findNodeModulesPaths } from "./resolution";
 
 export interface CompilationResult {
@@ -43,6 +43,13 @@ export class CompilationManager {
   private lastVirtualFileName: string = "";
   private lastSynthesizedCode: string = "";
   private queries: LanguageServiceQueries | null = null;
+  private lastNodeModulesPaths: string[] = [];
+
+  // Dependency bundling cache
+  private dependenciesCache: {
+    moduleIds: string[];
+    bundledCode: string;
+  } | null = null;
 
   constructor(private vaultRoot: string) {
     this.esbuildInstance = loadEsbuild(this.vaultRoot);
@@ -92,6 +99,7 @@ export class CompilationManager {
       this.vaultRoot,
       path.dirname(absoluteNotePath),
     );
+    this.lastNodeModulesPaths = nodeModulesPaths;
 
     this.updateLanguageService(
       virtualFileName,
@@ -255,29 +263,44 @@ export class CompilationManager {
   }
 
   /**
-   * Bundle core dependencies for iframe injection
-   * Returns bundled code for each module that can be injected into the iframe
+   * Bundle all dependencies together in one bundle
+   * Caches result and only rebundles when dependencies change
    */
-  async bundleDependencies(moduleIds: string[]): Promise<Record<string, string>> {
+  async bundleDependencies(moduleIds: string[]): Promise<string> {
     if (!this.esbuildInstance) {
       console.error("[remotion] esbuild instance not available");
-      return {};
+      return "";
     }
 
-    const bundled: Record<string, string> = {};
+    // Check if cache is valid
+    const sortedIds = [...moduleIds].sort();
+    const cacheValid =
+      this.dependenciesCache &&
+      this.dependenciesCache.moduleIds.length === sortedIds.length &&
+      this.dependenciesCache.moduleIds.every((id, idx) => id === sortedIds[idx]);
 
-    for (const moduleId of moduleIds) {
-      const result = await bundleModule(moduleId, this.esbuildInstance);
-      if (!result.error) {
-        bundled[moduleId] = result.code;
-      } else {
-        console.error(
-          `[remotion] Failed to bundle ${moduleId}:`,
-          result.error.message,
-        );
-      }
+    if (cacheValid) {
+      return this.dependenciesCache!.bundledCode;
     }
 
-    return bundled;
+    // Cache miss - bundle all dependencies together
+    const result = await bundleDependenciesBundle(
+      moduleIds,
+      this.esbuildInstance,
+      this.lastNodeModulesPaths,
+    );
+
+    if (result.error) {
+      console.error("[remotion] Failed to bundle dependencies:", result.error.message);
+      return "";
+    }
+
+    // Update cache
+    this.dependenciesCache = {
+      moduleIds: sortedIds,
+      bundledCode: result.code,
+    };
+
+    return result.code;
   }
 }

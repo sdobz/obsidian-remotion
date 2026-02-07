@@ -164,69 +164,57 @@ export class PreviewView extends ItemView implements ScrollDelegate {
 
   /**
    * Pre-inject all dependencies into iframe before bundle execution
-   * Uses compilation manager to bundle modules at runtime
-   * Fails immediately with error overlay if any module cannot be loaded
+   * All dependencies are bundled together in one bundle by esbuild
    */
-  private async injectDependencies(bundledModules: Record<string, string>): Promise<void> {
+  private async injectDependencies(moduleIds: string[], bundledCode: string): Promise<void> {
     if (!this.iframe?.contentWindow) {
       return;
     }
 
-    const deps: Record<string, unknown> = {};
-    const errors: string[] = [];
-
-    for (const moduleId of Object.keys(bundledModules)) {
-      // Check cache first (vault-scoped)
-      if (PreviewView.moduleCache.has(moduleId)) {
-        deps[moduleId] = PreviewView.moduleCache.get(moduleId)!;
-        continue;
-      }
-
-      try {
-        const bundledCode = bundledModules[moduleId];
-        if (!bundledCode) {
-          throw new Error(`Failed to bundle module '${moduleId}'`);
-        }
-
-        // Execute the bundled code to get the module exports
-        const moduleExports: any = {};
-        const moduleWrapper = `
-          (function() {
-            const exports = {};
-            const module = { exports };
-            ${bundledCode};
-            return module.exports || exports;
-          })()
-        `;
-
-        const module = eval(moduleWrapper);
-        if (module === undefined) {
-          throw new Error(`Module '${moduleId}' resolved to undefined`);
-        }
-        deps[moduleId] = module;
-        PreviewView.moduleCache.set(moduleId, module);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(`Failed to load '${moduleId}': ${message}`);
-        console.error(`[remotion] Failed to load module '${moduleId}':`, error);
-      }
-    }
-
-    // If any required modules failed, show error overlay immediately
-    if (errors.length > 0) {
-      const errorMessage = `Module loading failed:\n${errors.join("\n")}`;
-      this.showErrorOverlay(errorMessage);
+    if (!bundledCode) {
+      const error = "No dependencies bundled";
+      console.error("[remotion]", error);
+      this.showErrorOverlay(error);
       return;
     }
 
-    // Inject all dependencies into iframe
-    (this.iframe.contentWindow as any).__REMOTION_DEPS__ = deps;
+    try {
+      // Execute the bundled code to get the exports object
+      // The bundle is CommonJS format with all dependencies included
+      // eslint-disable-next-line no-eval, @typescript-eslint/no-implied-eval
+      const exports = Function(
+        'exports',
+        'module',
+        `${bundledCode}; return module.exports;`,
+      ).call({}, {}, { exports: {} });
 
-    // Also expose require for the bundle
-    (this.iframe.contentWindow as any).require = (id: string) => {
-      if (deps[id] !== undefined) return deps[id];
-      throw new Error(`Module not found: ${id}`);
-    };
+      // Map module IDs to their exports from the bundle
+      // esbuild exports them as m0, m1, m2, etc.
+      const deps: Record<string, unknown> = {};
+      moduleIds.forEach((id, idx) => {
+        const moduleExport = exports[`m${idx}`];
+        if (moduleExport !== undefined) {
+          deps[id] = moduleExport;
+          PreviewView.moduleCache.set(id, moduleExport);
+        } else {
+          console.warn(`[remotion] Module ${id} not found in bundle at index ${idx}`);
+        }
+      });
+
+      // Inject all dependencies into iframe
+      (this.iframe.contentWindow as any).__REMOTION_DEPS__ = deps;
+
+      // Also expose require for the bundle
+      (this.iframe.contentWindow as any).require = (id: string) => {
+        if (deps[id] !== undefined) return deps[id];
+        throw new Error(`Module not found: ${id}`);
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const errorMsg = `Failed to load dependencies: ${message}`;
+      console.error("[remotion]", errorMsg, error);
+      this.showErrorOverlay(errorMsg);
+    }
   }
 
   public resetForNewFile(): void {
@@ -235,14 +223,14 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  public async updateBundleOutput(code: string, runtimeModules: Record<string, string>): Promise<void> {
+  public async updateBundleOutput(code: string, moduleIds: string[], bundledDeps: string): Promise<void> {
     if (!this.iframe?.contentWindow) {
       console.warn("[Preview] Cannot update bundle output, iframe not ready");
       return;
     }
 
     // Pre-inject all dependencies before sending bundle
-    await this.injectDependencies(runtimeModules);
+    await this.injectDependencies(moduleIds, bundledDeps);
 
     // Check if injection failed (error overlay would be shown)
     const deps = (this.iframe.contentWindow as any).__REMOTION_DEPS__;
