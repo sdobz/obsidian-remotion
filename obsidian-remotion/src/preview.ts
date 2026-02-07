@@ -2,6 +2,7 @@ import { ItemView, WorkspaceLeaf, MarkdownView } from "obsidian";
 import iframeHtml from "./iframe.html";
 import type { Band, InterpolatorSpec, NullArray } from "./editor/scroll-math";
 import { ScrollDelegate, ScrollManager } from "./editor/scroll";
+import type { CompilationManager } from "./toolchain/compilation";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
 
@@ -60,7 +61,7 @@ export type IframeCommand =
 export class PreviewView extends ItemView implements ScrollDelegate {
   private iframe: HTMLIFrameElement | null = null;
   private scrollManager: ScrollManager | null = null;
-  private requireFn: ((id: string) => unknown) | undefined;
+  private compilationManager: CompilationManager | null = null;
   // Vault-scoped module cache - persists across file switches
   private static moduleCache: Map<string, unknown> = new Map();
 
@@ -113,10 +114,6 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     // Load iframe HTML from bundled file
     this.iframe.srcdoc = iframeHtml;
 
-    this.iframe.addEventListener("load", () => {
-      this.injectDependencies();
-    });
-
     window.addEventListener("message", this.handleMessage);
   }
 
@@ -129,6 +126,10 @@ export class PreviewView extends ItemView implements ScrollDelegate {
 
   public setScrollManager(scrollManager: ScrollManager | null): void {
     this.scrollManager = scrollManager;
+  }
+
+  public setCompilationManager(compilationManager: CompilationManager | null): void {
+    this.compilationManager = compilationManager;
   }
 
   onReflow(
@@ -161,70 +162,20 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  private setupRequireFunction(): void {
-    try {
-      const { createRequire } = require("module");
-      const adapter = this.app.vault.adapter as any;
-      if (adapter && typeof adapter.getBasePath === "function") {
-        const basePath = adapter.getBasePath();
-        const vaultRoot =
-          basePath && basePath.startsWith("app://")
-            ? basePath.replace(/^app:\/\/[^\/]+/, "")
-            : basePath;
-        if (vaultRoot) {
-          const anchor = require("path").join(vaultRoot, "package.json");
-          this.requireFn = createRequire(anchor);
-          return;
-        }
-      }
-    } catch (e) {
-      // Silently fail if createRequire is unavailable
-    }
-
-    const winReq = (window as any).require;
-    if (typeof winReq === "function") {
-      this.requireFn = winReq;
-      return;
-    }
-
-    if (typeof require === "function") {
-      this.requireFn = require;
-    }
-  }
-
   /**
    * Pre-inject all dependencies into iframe before bundle execution
-   * Core dependencies + user imports from runtimeModules
+   * Uses compilation manager to bundle modules at runtime
    * Fails immediately with error overlay if any module cannot be loaded
    */
-  private injectDependencies(runtimeModules: Set<string> = new Set()): void {
+  private async injectDependencies(bundledModules: Record<string, string>): Promise<void> {
     if (!this.iframe?.contentWindow) {
       return;
     }
 
-    if (!this.requireFn) {
-      this.setupRequireFunction();
-    }
-
-    if (!this.requireFn) {
-      const error = "Cannot load modules: require function not available";
-      console.error("[remotion]", error);
-      this.showErrorOverlay(error);
-      return;
-    }
-
-    const coreModules = [
-      "react",
-      "react-dom/client",
-      "@remotion/player",
-      "remotion",
-    ];
-
-    const allModules = [...coreModules, ...Array.from(runtimeModules)];
     const deps: Record<string, unknown> = {};
     const errors: string[] = [];
 
-    for (const moduleId of allModules) {
+    for (const moduleId of Object.keys(bundledModules)) {
       // Check cache first (vault-scoped)
       if (PreviewView.moduleCache.has(moduleId)) {
         deps[moduleId] = PreviewView.moduleCache.get(moduleId)!;
@@ -232,7 +183,23 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       }
 
       try {
-        const module = this.requireFn(moduleId);
+        const bundledCode = bundledModules[moduleId];
+        if (!bundledCode) {
+          throw new Error(`Failed to bundle module '${moduleId}'`);
+        }
+
+        // Execute the bundled code to get the module exports
+        const moduleExports: any = {};
+        const moduleWrapper = `
+          (function() {
+            const exports = {};
+            const module = { exports };
+            ${bundledCode};
+            return module.exports || exports;
+          })()
+        `;
+
+        const module = eval(moduleWrapper);
         if (module === undefined) {
           throw new Error(`Module '${moduleId}' resolved to undefined`);
         }
@@ -268,14 +235,14 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  public updateBundleOutput(code: string, runtimeModules: Set<string>): void {
+  public async updateBundleOutput(code: string, runtimeModules: Record<string, string>): Promise<void> {
     if (!this.iframe?.contentWindow) {
       console.warn("[Preview] Cannot update bundle output, iframe not ready");
       return;
     }
 
     // Pre-inject all dependencies before sending bundle
-    this.injectDependencies(runtimeModules);
+    await this.injectDependencies(runtimeModules);
 
     // Check if injection failed (error overlay would be shown)
     const deps = (this.iframe.contentWindow as any).__REMOTION_DEPS__;

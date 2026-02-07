@@ -151,3 +151,37 @@ export async function bundleTypeScriptSource(
     };
   }
 }
+
+export async function bundleModule(
+  moduleId: string,
+  esbuildInstance: typeof esbuild | null,
+): Promise<BundleResult> {
+  if (!esbuildInstance) {
+    return {
+      code: "/* esbuild not found */",
+      error: new Error("esbuild not available"),
+    };
+  }
+
+  try {
+    const result = await esbuildInstance.build({
+      entryPoints: [moduleId],
+      bundle: true,
+      platform: "browser",
+      format: "cjs",
+      write: false,
+      minify: false,
+      logLevel: "error",
+    });
+
+    if (result.outputFiles.length > 0) {
+      const code = new TextDecoder().decode(result.outputFiles[0].contents);
+      return { code };
+    }
+    return { code: "" };
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error(`[bundler] Failed to bundle module ${moduleId}:`, error);
+    return { code: "", error };
+  }
+}

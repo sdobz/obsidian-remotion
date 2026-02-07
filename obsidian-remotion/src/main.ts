@@ -156,6 +156,9 @@ export default class RemotionPlugin extends Plugin {
       this.scrollManager = new ScrollManager(editorView, previewView);
       previewView.setScrollManager(this.scrollManager);
     }
+
+    // Set compilation manager on preview view
+    previewView.setCompilationManager(this.compilationManager);
   }
 
   private schedulePreviewUpdate(): void {
@@ -202,7 +205,8 @@ export default class RemotionPlugin extends Plugin {
     }
 
     // Send bundle output with runtime modules and semantic locations
-    previewView.updateBundleOutput(result.bundleCode, result.runtimeModules);
+    const bundldDependencies = await this.compilationManager.bundleDependencies(result.runtimeModules);
+    await previewView.updateBundleOutput(result.bundleCode, bundldDependencies);
     this.scrollManager?.handlePreviewSpans(result.previewLocations);
 
     if (result.bundleStatus.status === "error" && result.bundleStatus.error) {

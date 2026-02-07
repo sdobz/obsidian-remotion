@@ -9,7 +9,7 @@ const Title: React.FC<React.PropsWithChildren> = ({children}) => {
 
 	return (
 		<div
-			style={{
+			style={{ 
 				fontSize: 80,
 				fontWeight: 700,
 				color: '#fff',

@@ -19,7 +19,7 @@ import {
   mapPreviewLocationsToMarkdown,
   LanguageServiceQueries,
 } from "./ts";
-import { loadEsbuild, bundleTypeScriptSource } from "./bundler";
+import { loadEsbuild, bundleTypeScriptSource, bundleModule } from "./bundler";
 import { findNodeModulesPaths } from "./resolution";
 
 export interface CompilationResult {
@@ -252,5 +252,32 @@ export class CompilationManager {
       result.filePath = view.file.path;
     }
     return result;
+  }
+
+  /**
+   * Bundle core dependencies for iframe injection
+   * Returns bundled code for each module that can be injected into the iframe
+   */
+  async bundleDependencies(moduleIds: string[]): Promise<Record<string, string>> {
+    if (!this.esbuildInstance) {
+      console.error("[remotion] esbuild instance not available");
+      return {};
+    }
+
+    const bundled: Record<string, string> = {};
+
+    for (const moduleId of moduleIds) {
+      const result = await bundleModule(moduleId, this.esbuildInstance);
+      if (!result.error) {
+        bundled[moduleId] = result.code;
+      } else {
+        console.error(
+          `[remotion] Failed to bundle ${moduleId}:`,
+          result.error.message,
+        );
+      }
+    }
+
+    return bundled;
   }
 }
