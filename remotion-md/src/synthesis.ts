@@ -1,15 +1,19 @@
-import type { ClassifiedBlock } from './extraction';
+import {
+  classifyBlocks,
+  extractCodeBlocks,
+  type ClassifiedBlock,
+} from "./extraction";
 
 export interface SceneExport {
-    exportName: string;
-    blockIndex: number;
-    startLine: number;
-    contentStartLineOffset: number;
+  exportName: string;
+  blockIndex: number;
+  startLine: number;
+  contentStartLineOffset: number;
 }
 
 export interface SynthesizedModule {
-    code: string;
-    sceneExports: SceneExport[];
+  code: string;
+  sceneExports: SceneExport[];
 }
 
 /**
@@ -21,13 +25,13 @@ export interface SynthesizedModule {
  * @returns Synthesized module output
  */
 export function synthesizeVirtualModule(
-    notePath: string,
-    blocks: ClassifiedBlock[]
+  notePath: string,
+  blocks: ClassifiedBlock[],
 ): SynthesizedModule {
-    const moduleParts: string[] = [];
+  const moduleParts: string[] = [];
 
-    // Inline preview() helper into synthesized module to avoid exporting it from remotion-md
-    moduleParts.push(`type PreviewPlayerOptions = {
+  // Inline preview() helper into synthesized module to avoid exporting it from remotion-md
+  moduleParts.push(`type PreviewPlayerOptions = {
     durationInFrames?: number;
     fps?: number;
     compositionWidth?: number;
@@ -37,13 +41,13 @@ export function synthesizeVirtualModule(
     autoPlay?: boolean;
     [key: string]: any;
 };`);
-    // Reset preview tracking at module start to prevent accumulation when switching files
-    moduleParts.push(`if (typeof globalThis !== 'undefined') {
+  // Reset preview tracking at module start to prevent accumulation when switching files
+  moduleParts.push(`if (typeof globalThis !== 'undefined') {
     (globalThis as any).__previewComponents = [];
     (globalThis as any).__previewOptions = [];
 }`);
-    
-    moduleParts.push(`const PREVIEW_DEFAULTS = {
+
+  moduleParts.push(`const PREVIEW_DEFAULTS = {
     durationInFrames: 150,
     fps: 30,
     compositionWidth: 1280,
@@ -52,8 +56,8 @@ export function synthesizeVirtualModule(
     loop: false,
     autoPlay: false,
 };`);
-    
-    moduleParts.push(`function preview(component: React.ComponentType<any>, options?: any) {
+
+  moduleParts.push(`function preview(component: React.ComponentType<any>, options?: any) {
     const anyGlobal = globalThis as any;
     const index = anyGlobal.__previewComponents.length;
     anyGlobal.__previewComponents[index] = component;
@@ -61,19 +65,30 @@ export function synthesizeVirtualModule(
     return component;
 }`);
 
-    const makeSentinel = (block: ClassifiedBlock) => {
-        const line = block.startLine + 1; // 1-based line number in markdown
-        return `// --- block ${block.blockIndex} @ ${notePath}:${line} ---`;
-    };
+  const makeSentinel = (block: ClassifiedBlock) => {
+    const line = block.startLine + 1; // 1-based line number in markdown
+    return `// --- block ${block.blockIndex} @ ${notePath}:${line} ---`;
+  };
 
-    // Emit all blocks (both module and jsx-entry) as-is
-    for (const block of blocks) {
-        moduleParts.push(makeSentinel(block));
-        moduleParts.push(block.content);
-    }
+  // Emit all blocks (both module and jsx-entry) as-is
+  for (const block of blocks) {
+    moduleParts.push(makeSentinel(block));
+    moduleParts.push(block.content);
+  }
 
-    const code = moduleParts.join('\n\n');
-    const sceneExports: SceneExport[] = [];
+  const code = moduleParts.join("\n\n");
+  const sceneExports: SceneExport[] = [];
 
-    return { code, sceneExports };
+  return { code, sceneExports };
+}
+
+/**
+ * Synthesize a virtual TSX module directly from markdown content.
+ */
+export function synthesizeMarkdownModule(
+  notePath: string,
+  markdownText: string,
+): SynthesizedModule {
+  const blocks = classifyBlocks(extractCodeBlocks(markdownText));
+  return synthesizeVirtualModule(notePath, blocks);
 }

@@ -12,9 +12,15 @@
     "baseUrl": "./",
     "allowJs": true,
     "paths": {
+      "remotion-md": ["../remotion-md/src"],
+      "remotion-md/*": ["../remotion-md/src/*"],
       "*": ["src/types/*"]
     },
-    "typeRoots": ["./node_modules/@types", "../node_modules/@types", "./node_modules/obsidian"],
+    "typeRoots": [
+      "./node_modules/@types",
+      "../node_modules/@types",
+      "./node_modules/obsidian"
+    ],
     "lib": ["DOM", "ESNext"],
     "sourceMap": true,
     "inlineSources": true

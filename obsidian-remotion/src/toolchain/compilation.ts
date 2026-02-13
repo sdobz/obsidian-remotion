@@ -117,6 +117,7 @@ export class CompilationManager {
         synthesized.code,
         virtualFileName,
         this.esbuildInstance,
+        nodeModulesPaths,
       ),
     ]);
     const tsEnd = performance.now();

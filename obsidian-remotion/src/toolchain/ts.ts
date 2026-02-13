@@ -4,6 +4,9 @@ import {
   createModuleResolver,
   extractPreviewCallLocations,
   getResolutionDirectory,
+  isVirtualMarkdownFileName,
+  synthesizeMarkdownModule,
+  virtualMarkdownToFileName,
   type PreviewSpan,
 } from "remotion-md";
 import fs from "fs";
@@ -210,21 +213,36 @@ export function createLanguageService(
     strictFunctionTypes: true,
   };
 
+  const loadMarkdownModule = (virtualPath: string): string | undefined => {
+    const markdownPath = virtualMarkdownToFileName(virtualPath);
+    if (!markdownPath) return undefined;
+    try {
+      const markdownText = fs.readFileSync(markdownPath, "utf-8");
+      return synthesizeMarkdownModule(markdownPath, markdownText).code;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const readFileFromHost = (fileName: string): string | undefined => {
+    const text = virtualFiles.get(fileName);
+    if (text !== undefined) return text;
+    if (isVirtualMarkdownFileName(fileName)) {
+      return loadMarkdownModule(fileName);
+    }
+    try {
+      return fs.readFileSync(fileName, "utf-8");
+    } catch {
+      return undefined;
+    }
+  };
+
   const host: ts.LanguageServiceHost = {
     getScriptFileNames: () => Array.from(virtualFiles.keys()),
     getScriptVersion: (fileName) => String(documentVersions.get(fileName) || 0),
     getScriptSnapshot: (fileName) => {
-      const text = virtualFiles.get(fileName);
+      const text = readFileFromHost(fileName);
       if (text !== undefined) return ts.ScriptSnapshot.fromString(text);
-      try {
-        if (fs.existsSync(fileName)) {
-          return ts.ScriptSnapshot.fromString(
-            fs.readFileSync(fileName, "utf-8"),
-          );
-        }
-      } catch {
-        // ignore
-      }
       return undefined;
     },
     getCurrentDirectory: () => resolutionDirectory,
@@ -232,20 +250,18 @@ export function createLanguageService(
     getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
     fileExists: (fileName) => {
       if (virtualFiles.has(fileName)) return true;
+      if (isVirtualMarkdownFileName(fileName)) {
+        const markdownPath = virtualMarkdownToFileName(fileName);
+        if (!markdownPath) return false;
+        return fs.existsSync(markdownPath);
+      }
       try {
         return fs.existsSync(fileName);
       } catch {
         return false;
       }
     },
-    readFile: (fileName) => {
-      if (virtualFiles.has(fileName)) return virtualFiles.get(fileName);
-      try {
-        return fs.readFileSync(fileName, "utf-8");
-      } catch {
-        return undefined;
-      }
-    },
+    readFile: (fileName) => readFileFromHost(fileName),
   };
 
   // Create module resolver after host is defined

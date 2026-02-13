@@ -1,6 +1,15 @@
 import type esbuild from "esbuild";
+import fs from "fs";
 import path from "path";
-import { findNodeModulesPaths } from "remotion-md";
+import ts from "typescript";
+import {
+  createModuleResolver,
+  findNodeModulesPaths,
+  getResolutionDirectory,
+  isVirtualMarkdownFileName,
+  synthesizeMarkdownModule,
+  virtualMarkdownToFileName,
+} from "remotion-md";
 
 export interface BundleResult {
   code: string;
@@ -33,8 +42,56 @@ async function bundleVirtualModule(
   entryCode: string,
   entryName: string,
   esbuildInstance: typeof esbuild,
+  nodeModulesPaths: string[],
 ): Promise<BundleResult> {
   const builtins = ["fs", "path", "os", "crypto", "util", "stream", "events"];
+  const resolutionDirectory = getResolutionDirectory(
+    nodeModulesPaths,
+    path.dirname(entryName),
+  );
+
+  const compilerOptions: ts.CompilerOptions = {
+    jsx: ts.JsxEmit.React,
+    target: ts.ScriptTarget.ES2020,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeJs,
+  };
+
+  const moduleResolutionHost: ts.ModuleResolutionHost = {
+    fileExists: (fileName) => {
+      if (isVirtualMarkdownFileName(fileName)) {
+        const markdownPath = virtualMarkdownToFileName(fileName);
+        return markdownPath ? fs.existsSync(markdownPath) : false;
+      }
+      return fs.existsSync(fileName);
+    },
+    readFile: (fileName) => {
+      if (isVirtualMarkdownFileName(fileName)) {
+        const markdownPath = virtualMarkdownToFileName(fileName);
+        if (!markdownPath) return undefined;
+        const markdownText = fs.readFileSync(markdownPath, "utf-8");
+        return synthesizeMarkdownModule(markdownPath, markdownText).code;
+      }
+      return fs.readFileSync(fileName, "utf-8");
+    },
+    getCurrentDirectory: () => resolutionDirectory,
+    getDirectories: (dirPath) => {
+      try {
+        return fs
+          .readdirSync(dirPath, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name);
+      } catch {
+        return [];
+      }
+    },
+  };
+
+  const moduleResolver = createModuleResolver(
+    resolutionDirectory,
+    compilerOptions,
+    moduleResolutionHost,
+  );
 
   const virtualModulePlugin: esbuild.Plugin = {
     name: "virtual-entry",
@@ -51,9 +108,55 @@ async function bundleVirtualModule(
       });
       build.onLoad({ filter: /.*/, namespace: "virtual" }, (args) => {
         if (args.path === entryName) {
-          return { contents: entryCode, loader: "tsx" };
+          return {
+            contents: entryCode,
+            loader: "tsx",
+            resolveDir: path.dirname(entryName),
+          };
         }
         return null;
+      });
+    },
+  };
+
+  const tsResolvePlugin: esbuild.Plugin = {
+    name: "ts-resolve",
+    setup(build) {
+      build.onResolve({ filter: /.*/ }, (args) => {
+        if (args.path === "virtual-entry" || args.path === entryName) {
+          return null;
+        }
+        const isRelativeOrAbsolute =
+          args.path.startsWith(".") || args.path.startsWith("/");
+        if (!isRelativeOrAbsolute) return null;
+        const containingFile = args.importer || entryName;
+        const resolved = moduleResolver([args.path], containingFile)[0];
+        if (!resolved) return null;
+        return { path: resolved.resolvedFileName };
+      });
+
+      build.onLoad({ filter: /\.md\.tsx$/ }, (args) => {
+        const markdownPath = virtualMarkdownToFileName(args.path);
+        if (!markdownPath) return null;
+        try {
+          const markdownText = fs.readFileSync(markdownPath, "utf-8");
+          const synthesized = synthesizeMarkdownModule(
+            markdownPath,
+            markdownText,
+          );
+          return { contents: synthesized.code, loader: "tsx" };
+        } catch (err) {
+          return {
+            errors: [
+              {
+                text:
+                  err instanceof Error
+                    ? err.message
+                    : "Failed to load markdown",
+              },
+            ],
+          };
+        }
       });
     },
   };
@@ -81,12 +184,14 @@ async function bundleVirtualModule(
     const result = await esbuildInstance.build({
       stdin: {
         contents: `const sequence = require("${entryName}").default;\nmodule.exports = sequence;`,
+        resolveDir: path.dirname(entryName),
       },
       bundle: true,
       format: "iife",
       write: false,
       logLevel: "error",
       plugins: [
+        tsResolvePlugin,
         externalizePackagesPlugin,
         // nodeBuiltinsMockPlugin,
         virtualModulePlugin,
@@ -113,6 +218,7 @@ export async function bundleTypeScriptSource(
   sourceText: string,
   virtualFileName: string,
   esbuildInstance: typeof esbuild | null,
+  nodeModulesPaths: string[],
 ): Promise<BundleResult> {
   if (!esbuildInstance) {
     return {
@@ -125,6 +231,7 @@ export async function bundleTypeScriptSource(
       sourceText,
       virtualFileName,
       esbuildInstance,
+      nodeModulesPaths,
     );
   } catch (err) {
     console.error("[remotion] Bundle failed:", err);
