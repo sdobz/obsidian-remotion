@@ -156,9 +156,6 @@ export default class RemotionPlugin extends Plugin {
       this.scrollManager = new ScrollManager(editorView, previewView);
       previewView.setScrollManager(this.scrollManager);
     }
-
-    // Set compilation manager on preview view
-    previewView.setCompilationManager(this.compilationManager);
   }
 
   private schedulePreviewUpdate(): void {
@@ -206,12 +203,22 @@ export default class RemotionPlugin extends Plugin {
 
     // Send bundle output with runtime modules and semantic locations
     // Always include core dependencies needed by the preview infrastructure
-    const coreModules = ['react', 'react-dom/client', '@remotion/player', 'remotion'];
+    const coreModules = [
+      "react",
+      "react-dom/client",
+      "@remotion/player",
+      "remotion",
+    ];
     const userModules = Array.from(result.runtimeModules);
     const allModules = [...new Set([...coreModules, ...userModules])];
 
-    const bundledDependencies = await this.compilationManager.bundleDependencies(allModules);
-    await previewView.updateBundleOutput(result.bundleCode, allModules, bundledDependencies);
+    const bundledDependencies =
+      await this.compilationManager.bundleDependencies(allModules);
+    await previewView.updateBundleOutput(
+      result.bundleCode,
+      allModules,
+      bundledDependencies,
+    );
     this.scrollManager?.handlePreviewSpans(result.previewLocations);
 
     if (result.bundleStatus.status === "error" && result.bundleStatus.error) {

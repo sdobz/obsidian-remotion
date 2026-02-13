@@ -1,4 +1,10 @@
-import { ItemView, WorkspaceLeaf, MarkdownView, normalizePath } from "obsidian";
+import {
+  ItemView,
+  WorkspaceLeaf,
+  MarkdownView,
+  normalizePath,
+  TFile,
+} from "obsidian";
 import path from "path";
 import iframeHtml from "./iframe.html";
 import type { Band, InterpolatorSpec, NullArray } from "./editor/scroll-math";
@@ -62,7 +68,6 @@ export type IframeCommand =
 export class PreviewView extends ItemView implements ScrollDelegate {
   private iframe: HTMLIFrameElement | null = null;
   private scrollManager: ScrollManager | null = null;
-  private compilationManager: CompilationManager | null = null;
   // Vault-scoped module cache - persists across file switches
   private static moduleCache: Map<string, unknown> = new Map();
 
@@ -129,12 +134,6 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.scrollManager = scrollManager;
   }
 
-  public setCompilationManager(
-    compilationManager: CompilationManager | null,
-  ): void {
-    this.compilationManager = compilationManager;
-  }
-
   onReflow(
     bandScrollHeight: number,
     bands: NullArray<Band>,
@@ -187,7 +186,14 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     const iframeWindow = this.iframe.contentWindow as any;
     const resolver = this.createStaticFileResolver();
     const originalFetch = iframeWindow.fetch?.bind(iframeWindow);
-    const fetchShim = this.createFetchShim(originalFetch, resolver);
+    const fetchShim = this.createFetchShim({
+      originalFetch,
+      resolvePath: resolver,
+      ResponseCtor: iframeWindow.Response,
+      HeadersCtor: iframeWindow.Headers,
+      RequestCtor: iframeWindow.Request,
+      URLCtor: iframeWindow.URL,
+    });
     if (fetchShim) {
       iframeWindow.fetch = fetchShim;
     }
@@ -231,10 +237,16 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     }
   }
 
-  private createStaticFileResolver(): (filePath: string) => string {
+  private createStaticFileResolver(): (
+    filePath: string,
+  ) =>
+    | { kind: "vault"; file: TFile; size: number; mimeType?: string }
+    | { kind: "url"; url: string } {
     const app = this.app;
-    return (filePath: string): string => {
-      if (!filePath || typeof filePath !== "string") return filePath;
+    return (filePath: string) => {
+      if (!filePath || typeof filePath !== "string") {
+        return { kind: "url", url: String(filePath) };
+      }
 
       const activeView = app.workspace.getActiveViewOfType(MarkdownView);
       const activePath = activeView?.file?.path || "";
@@ -248,36 +260,163 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       }
 
       const file = app.vault.getAbstractFileByPath(resolvedPath);
-      if (file) {
-        return app.vault.getResourcePath(file);
+      if (file instanceof TFile) {
+        return {
+          kind: "vault",
+          file,
+          size: file.stat.size,
+          mimeType: this.getMimeType(file.extension),
+        };
       }
 
-      return filePath;
+      return { kind: "url", url: filePath };
     };
   }
 
-  private createFetchShim(
-    originalFetch: typeof fetch | undefined,
-    resolvePath: (filePath: string) => string,
-  ): typeof fetch | null {
-    if (!originalFetch) return null;
+  private createFetchShim({
+    originalFetch,
+    resolvePath,
+    ResponseCtor,
+    HeadersCtor,
+    RequestCtor,
+    URLCtor,
+  }: {
+    originalFetch: typeof fetch | undefined;
+    resolvePath: (
+      filePath: string,
+    ) =>
+      | { kind: "vault"; file: TFile; size: number; mimeType?: string }
+      | { kind: "url"; url: string };
+    ResponseCtor: typeof Response | undefined;
+    HeadersCtor: typeof Headers | undefined;
+    RequestCtor: typeof Request | undefined;
+    URLCtor: typeof URL | undefined;
+  }): typeof fetch | null {
+    if (!originalFetch || !ResponseCtor || !HeadersCtor) return null;
 
-    return (input: RequestInfo | URL, init?: RequestInit) => {
-      if (typeof input === "string") {
-        return originalFetch(resolvePath(input), init);
+    return async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request =
+        RequestCtor && input instanceof RequestCtor ? input : null;
+      const urlString =
+        typeof input === "string"
+          ? input
+          : URLCtor && input instanceof URLCtor
+            ? input.toString()
+            : (request?.url ?? "");
+
+      const resolved = resolvePath(urlString);
+      if (resolved.kind !== "vault") {
+        return originalFetch(input as RequestInfo, init);
       }
 
-      if (input instanceof URL) {
-        return originalFetch(resolvePath(input.toString()), init);
+      const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
+      if (method !== "GET" && method !== "HEAD") {
+        return originalFetch(input as RequestInfo, init);
       }
 
-      if (typeof Request !== "undefined" && input instanceof Request) {
-        const request = new Request(resolvePath(input.url), input);
-        return originalFetch(request, init);
+      const headers = new HeadersCtor(init?.headers ?? request?.headers);
+      const rangeHeader = headers.get("range") ?? headers.get("Range");
+      const totalSize = resolved.size;
+
+      if (method === "HEAD") {
+        return new ResponseCtor(null, {
+          status: 200,
+          headers: this.buildVaultHeaders(
+            HeadersCtor,
+            totalSize,
+            resolved.mimeType,
+          ),
+        });
       }
 
-      return originalFetch(input as RequestInfo, init);
+      const data = await this.app.vault.readBinary(resolved.file);
+      const range = rangeHeader
+        ? this.parseRangeHeader(rangeHeader, totalSize)
+        : null;
+
+      if (range) {
+        const sliced = data.slice(range.start, range.end + 1);
+        const headersOut = this.buildVaultHeaders(
+          HeadersCtor,
+          sliced.byteLength,
+          resolved.mimeType,
+        );
+        headersOut.set(
+          "Content-Range",
+          `bytes ${range.start}-${range.end}/${totalSize}`,
+        );
+        return new ResponseCtor(sliced, { status: 206, headers: headersOut });
+      }
+
+      return new ResponseCtor(data, {
+        status: 200,
+        headers: this.buildVaultHeaders(
+          HeadersCtor,
+          totalSize,
+          resolved.mimeType,
+        ),
+      });
     };
+  }
+
+  private buildVaultHeaders(
+    HeadersCtor: typeof Headers,
+    length: number,
+    mimeType?: string,
+  ): Headers {
+    const headers = new HeadersCtor();
+    headers.set("Content-Length", String(length));
+    headers.set("Accept-Ranges", "bytes");
+    if (mimeType) {
+      headers.set("Content-Type", mimeType);
+    }
+    return headers;
+  }
+
+  private parseRangeHeader(
+    rangeHeader: string,
+    totalSize: number,
+  ): { start: number; end: number } | null {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+    if (!match) return null;
+
+    const startRaw = match[1];
+    const endRaw = match[2];
+    let start = startRaw ? Number.parseInt(startRaw, 10) : NaN;
+    let end = endRaw ? Number.parseInt(endRaw, 10) : NaN;
+
+    if (Number.isNaN(start) && Number.isNaN(end)) return null;
+
+    if (Number.isNaN(start)) {
+      const suffixLength = end;
+      if (Number.isNaN(suffixLength) || suffixLength <= 0) return null;
+      start = Math.max(totalSize - suffixLength, 0);
+      end = totalSize - 1;
+    } else if (Number.isNaN(end)) {
+      end = totalSize - 1;
+    }
+
+    if (start < 0 || end < start || end >= totalSize) return null;
+    return { start, end };
+  }
+
+  private getMimeType(extension: string): string | undefined {
+    const normalized = extension.toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      mp4: "video/mp4",
+      webm: "video/webm",
+      mov: "video/quicktime",
+      mp3: "audio/mpeg",
+      wav: "audio/wav",
+      ogg: "audio/ogg",
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+      svg: "image/svg+xml",
+    };
+    return mimeTypes[normalized];
   }
 
   public resetForNewFile(): void {
