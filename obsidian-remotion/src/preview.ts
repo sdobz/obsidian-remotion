@@ -1,4 +1,5 @@
-import { ItemView, WorkspaceLeaf, MarkdownView } from "obsidian";
+import { ItemView, WorkspaceLeaf, MarkdownView, normalizePath } from "obsidian";
+import path from "path";
 import iframeHtml from "./iframe.html";
 import type { Band, InterpolatorSpec, NullArray } from "./editor/scroll-math";
 import { ScrollDelegate, ScrollManager } from "./editor/scroll";
@@ -13,50 +14,50 @@ export interface PlayerStatus {
 /** Message received from iframe */
 export type PreviewMessage =
   | {
-    type: "runtime-error";
-    error?: { message?: string; stack?: string };
-  }
+      type: "runtime-error";
+      error?: { message?: string; stack?: string };
+    }
   | {
-    type: "player-status";
-    players: PlayerStatus[];
-  }
+      type: "player-status";
+      players: PlayerStatus[];
+    }
   | {
-    type: "player-scroll";
-    playerScrollTop: number;
-  }
+      type: "player-scroll";
+      playerScrollTop: number;
+    }
   | {
-    type: "iframe-ready";
-  };
+      type: "iframe-ready";
+    };
 
 /** Message sent to iframe */
 export type IframeCommand =
   | {
-    type: "reset";
-  }
+      type: "reset";
+    }
   | {
-    type: "show-error";
-    message: string;
-    stack?: string;
-  }
+      type: "show-error";
+      message: string;
+      stack?: string;
+    }
   | {
-    type: "clear-error";
-  }
+      type: "clear-error";
+    }
   | {
-    type: "reflow";
-    bandScrollHeight: number;
-    bands: NullArray<Band>;
-    playerScrollHeight: number;
-    players: NullArray<Band>;
-    interpolatorSpecs: InterpolatorSpec[];
-  }
+      type: "reflow";
+      bandScrollHeight: number;
+      bands: NullArray<Band>;
+      playerScrollHeight: number;
+      players: NullArray<Band>;
+      interpolatorSpecs: InterpolatorSpec[];
+    }
   | {
-    type: "bundle";
-    payload: string;
-  }
+      type: "bundle";
+      payload: string;
+    }
   | {
-    type: "scroll";
-    editorScrollTop: number;
-  };
+      type: "scroll";
+      editorScrollTop: number;
+    };
 
 export class PreviewView extends ItemView implements ScrollDelegate {
   private iframe: HTMLIFrameElement | null = null;
@@ -128,7 +129,9 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.scrollManager = scrollManager;
   }
 
-  public setCompilationManager(compilationManager: CompilationManager | null): void {
+  public setCompilationManager(
+    compilationManager: CompilationManager | null,
+  ): void {
     this.compilationManager = compilationManager;
   }
 
@@ -166,7 +169,10 @@ export class PreviewView extends ItemView implements ScrollDelegate {
    * Pre-inject all dependencies into iframe before bundle execution
    * All dependencies are bundled together in one bundle by esbuild
    */
-  private async injectDependencies(moduleIds: string[], bundledCode: string): Promise<void> {
+  private async injectDependencies(
+    moduleIds: string[],
+    bundledCode: string,
+  ): Promise<void> {
     if (!this.iframe?.contentWindow) {
       return;
     }
@@ -178,15 +184,21 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       return;
     }
 
+    const iframeWindow = this.iframe.contentWindow as any;
+    const resolver = this.createStaticFileResolver();
+    const originalFetch = iframeWindow.fetch?.bind(iframeWindow);
+    const fetchShim = this.createFetchShim(originalFetch, resolver);
+    if (fetchShim) {
+      iframeWindow.fetch = fetchShim;
+    }
+
     try {
       // Execute the bundled code to get the exports object
       // The bundle is CommonJS format with all dependencies included
       // eslint-disable-next-line no-eval, @typescript-eslint/no-implied-eval
-      const exports = Function(
-        'exports',
-        'module',
-        `${bundledCode}; return module.exports;`,
-      ).call({}, {}, { exports: {} });
+      const exports = iframeWindow
+        .Function("exports", "module", `${bundledCode}; return module.exports;`)
+        .call(iframeWindow, {}, { exports: {} });
 
       // Map module IDs to their exports from the bundle
       // esbuild exports them as m0, m1, m2, etc.
@@ -197,7 +209,9 @@ export class PreviewView extends ItemView implements ScrollDelegate {
           deps[id] = moduleExport;
           PreviewView.moduleCache.set(id, moduleExport);
         } else {
-          console.warn(`[remotion] Module ${id} not found in bundle at index ${idx}`);
+          console.warn(
+            `[remotion] Module ${id} not found in bundle at index ${idx}`,
+          );
         }
       });
 
@@ -217,13 +231,66 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     }
   }
 
+  private createStaticFileResolver(): (filePath: string) => string {
+    const app = this.app;
+    return (filePath: string): string => {
+      if (!filePath || typeof filePath !== "string") return filePath;
+
+      const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+      const activePath = activeView?.file?.path || "";
+      let resolvedPath = filePath;
+
+      if (!filePath.startsWith("/") && activePath) {
+        const baseDir = path.posix.dirname(activePath);
+        resolvedPath = normalizePath(path.posix.join(baseDir, filePath));
+      } else {
+        resolvedPath = normalizePath(filePath.replace(/^\//, ""));
+      }
+
+      const file = app.vault.getAbstractFileByPath(resolvedPath);
+      if (file) {
+        return app.vault.getResourcePath(file);
+      }
+
+      return filePath;
+    };
+  }
+
+  private createFetchShim(
+    originalFetch: typeof fetch | undefined,
+    resolvePath: (filePath: string) => string,
+  ): typeof fetch | null {
+    if (!originalFetch) return null;
+
+    return (input: RequestInfo | URL, init?: RequestInit) => {
+      if (typeof input === "string") {
+        return originalFetch(resolvePath(input), init);
+      }
+
+      if (input instanceof URL) {
+        return originalFetch(resolvePath(input.toString()), init);
+      }
+
+      if (typeof Request !== "undefined" && input instanceof Request) {
+        const request = new Request(resolvePath(input.url), input);
+        return originalFetch(request, init);
+      }
+
+      return originalFetch(input as RequestInfo, init);
+    };
+  }
+
   public resetForNewFile(): void {
     if (!this.iframe?.contentWindow) return;
     const cmd: IframeCommand = { type: "reset" };
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  public async updateBundleOutput(code: string, moduleIds: string[], bundledDeps: string): Promise<void> {
+  public async updateBundleOutput(
+    code: string,
+    moduleIds: string[],
+    bundledDeps: string,
+  ): Promise<void> {
     if (!this.iframe?.contentWindow) {
       console.warn("[Preview] Cannot update bundle output, iframe not ready");
       return;
