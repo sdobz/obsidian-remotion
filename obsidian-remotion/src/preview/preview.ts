@@ -190,6 +190,24 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       this.app.vault.readBinary.bind(this.app.vault),
     );
 
+    const cachedDeps: Record<string, unknown> = {};
+    const hasAllCached = moduleIds.every((id) =>
+      PreviewView.moduleCache.has(id),
+    );
+
+    if (hasAllCached) {
+      moduleIds.forEach((id) => {
+        cachedDeps[id] = PreviewView.moduleCache.get(id);
+      });
+
+      (this.iframe.contentWindow as any).__REMOTION_DEPS__ = cachedDeps;
+      (this.iframe.contentWindow as any).require = (id: string) => {
+        if (cachedDeps[id] !== undefined) return cachedDeps[id];
+        throw new Error(`Module not found: ${id}`);
+      };
+      return;
+    }
+
     try {
       // Execute the bundled code to get the exports object
       // The bundle is CommonJS format with all dependencies included
@@ -200,7 +218,7 @@ export class PreviewView extends ItemView implements ScrollDelegate {
 
       // Map module IDs to their exports from the bundle
       // esbuild exports them as m0, m1, m2, etc.
-      const deps: Record<string, unknown> = {};
+      const deps: Record<string, unknown> = { ...cachedDeps };
       moduleIds.forEach((id, idx) => {
         const moduleExport = exports[`m${idx}`];
         if (moduleExport !== undefined) {
