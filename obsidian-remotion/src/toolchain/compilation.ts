@@ -9,6 +9,7 @@ import {
   type ClassifiedBlock,
   type MarkdownDiagnostic,
   type PreviewSpan,
+  findNodeModulesPaths,
 } from "remotion-md";
 import path from "path";
 import type esbuild from "esbuild";
@@ -19,8 +20,11 @@ import {
   mapPreviewLocationsToMarkdown,
   LanguageServiceQueries,
 } from "./ts";
-import { loadEsbuild, bundleTypeScriptSource, bundleDependenciesBundle } from "./bundler";
-import { findNodeModulesPaths } from "./resolution";
+import {
+  loadEsbuild,
+  bundleTypeScriptSource,
+  bundleDependenciesBundle,
+} from "./bundler";
 
 export interface CompilationResult {
   previewLocations: PreviewSpan[];
@@ -277,7 +281,9 @@ export class CompilationManager {
     const cacheValid =
       this.dependenciesCache &&
       this.dependenciesCache.moduleIds.length === sortedIds.length &&
-      this.dependenciesCache.moduleIds.every((id, idx) => id === sortedIds[idx]);
+      this.dependenciesCache.moduleIds.every(
+        (id, idx) => id === sortedIds[idx],
+      );
 
     if (cacheValid) {
       return this.dependenciesCache!.bundledCode;
@@ -291,7 +297,10 @@ export class CompilationManager {
     );
 
     if (result.error) {
-      console.error("[remotion] Failed to bundle dependencies:", result.error.message);
+      console.error(
+        "[remotion] Failed to bundle dependencies:",
+        result.error.message,
+      );
       return "";
     }
 

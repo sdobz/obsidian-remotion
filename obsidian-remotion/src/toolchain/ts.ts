@@ -1,9 +1,13 @@
 import ts from "typescript";
 import type { MarkdownView } from "obsidian";
-import { extractPreviewCallLocations, type PreviewSpan } from "remotion-md";
+import {
+  createModuleResolver,
+  extractPreviewCallLocations,
+  getResolutionDirectory,
+  type PreviewSpan,
+} from "remotion-md";
 import fs from "fs";
 import path from "path";
-import { getResolutionDirectory, createModuleResolver } from "./resolution";
 
 interface BlockMap {
   synthStartLine: number;
@@ -259,7 +263,10 @@ export function createLanguageService(
   // Add module resolver to host
   host.resolveModuleNames = moduleResolver;
 
-  const languageService = ts.createLanguageService(host, ts.createDocumentRegistry());
+  const languageService = ts.createLanguageService(
+    host,
+    ts.createDocumentRegistry(),
+  );
   return { languageService, languageServiceHost: host };
 }
 
@@ -370,7 +377,10 @@ export class LanguageServiceQueries {
 
     const def = definitions[0];
     if (def.fileName !== this.virtualFileName) {
-      const { line, column } = posToLineColumn(def.fileName, def.textSpan.start);
+      const { line, column } = posToLineColumn(
+        def.fileName,
+        def.textSpan.start,
+      );
       return { filePath: def.fileName, line, column };
     }
 
@@ -392,7 +402,9 @@ export function getPreviewCallLocations(
   virtualFileName: string,
 ): PreviewSpan[] {
   if (!languageService) return [];
-  const sourceFile = languageService.getProgram()?.getSourceFile(virtualFileName);
+  const sourceFile = languageService
+    .getProgram()
+    ?.getSourceFile(virtualFileName);
   if (!sourceFile) return [];
   return extractPreviewCallLocations(sourceFile);
 }

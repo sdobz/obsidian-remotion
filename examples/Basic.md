@@ -29,7 +29,7 @@ const Title: React.FC = () => {
 ```
 
 ```tsx
-preview(
+export const BasicTitle = preview(
 	() => <Title /> 
 )
 ```

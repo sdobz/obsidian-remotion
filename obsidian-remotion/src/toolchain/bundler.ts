@@ -1,7 +1,6 @@
 import type esbuild from "esbuild";
-import fs from "fs";
 import path from "path";
-import { findNodeModulesPaths } from "./resolution";
+import { findNodeModulesPaths } from "remotion-md";
 
 export interface BundleResult {
   code: string;
@@ -36,22 +35,6 @@ async function bundleVirtualModule(
   esbuildInstance: typeof esbuild,
 ): Promise<BundleResult> {
   const builtins = ["fs", "path", "os", "crypto", "util", "stream", "events"];
-
-  const nodeBuiltinsMockPlugin: esbuild.Plugin = {
-    name: "node-builtins-mock",
-    setup(build) {
-      for (const builtin of builtins) {
-        build.onResolve({ filter: new RegExp(`^${builtin}$`) }, () => ({
-          path: builtin,
-          namespace: "node-builtin-mock",
-        }));
-        build.onLoad({ filter: /.*/, namespace: "node-builtin-mock" }, () => ({
-          contents: "module.exports = {};",
-          loader: "js",
-        }));
-      }
-    },
-  };
 
   const virtualModulePlugin: esbuild.Plugin = {
     name: "virtual-entry",
@@ -167,10 +150,12 @@ export async function bundleDependenciesBundle(
   try {
     // Create a virtual entry point that re-exports all dependencies
     // Import the entire module namespace since many ESM packages don't have default exports
-    const entryCode = moduleIds
-      .map((id, idx) => `import * as m${idx} from '${id}';`)
-      .join('\n') + '\n' +
-      moduleIds.map((id, idx) => `export { m${idx} };`).join('\n');
+    const entryCode =
+      moduleIds
+        .map((id, idx) => `import * as m${idx} from '${id}';`)
+        .join("\n") +
+      "\n" +
+      moduleIds.map((id, idx) => `export { m${idx} };`).join("\n");
 
     const result = await esbuildInstance.build({
       stdin: {
