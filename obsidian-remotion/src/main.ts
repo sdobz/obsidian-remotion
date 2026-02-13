@@ -4,7 +4,7 @@ import {
   MarkdownView,
   MarkdownRenderer,
 } from "obsidian";
-import { PreviewView, PREVIEW_VIEW_TYPE } from "./preview";
+import { PreviewView, PREVIEW_VIEW_TYPE } from "./preview/preview";
 import {
   PluginSettings,
   DEFAULT_SETTINGS,

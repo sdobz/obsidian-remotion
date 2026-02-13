@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting, MarkdownView } from "obsidian";
-import { PREVIEW_VIEW_TYPE, PreviewView } from "./preview";
+import { PREVIEW_VIEW_TYPE, PreviewView } from "./preview/preview";
 import type RemotionPlugin from "./main";
 
 /**

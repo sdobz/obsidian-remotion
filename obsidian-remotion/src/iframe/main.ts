@@ -14,7 +14,7 @@
  * - Bundle errors → overlays → editor (error messages)
  */
 
-import type { IframeCommand } from "../preview";
+import type { IframeCommand } from "../preview/preview";
 import { BundleManager } from "./bundle";
 import { PlayerManager } from "./players";
 import { BandsLinksRenderer } from "./bands-links";
