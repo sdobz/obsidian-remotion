@@ -45,22 +45,3 @@ export function getVaultRootPath(app: App): string | null {
   }
   return null;
 }
-
-/**
- * Setup the plugin directory path for runtime access
- */
-export function setupPluginDirectory(
-  app: App,
-  manifest?: PluginManifest,
-): void {
-  try {
-    const vaultRoot = getVaultRootPath(app);
-    const configDir = (app.vault as any).configDir || ".obsidian";
-    if (vaultRoot && manifest?.id) {
-      const pluginDir = path.join(vaultRoot, configDir, "plugins", manifest.id);
-      (globalThis as any).__REMOTION_PLUGIN_DIR = pluginDir;
-    }
-  } catch (err) {
-    // Silently fail if plugin dir cannot be set
-  }
-}

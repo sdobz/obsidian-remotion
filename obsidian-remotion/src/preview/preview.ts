@@ -305,19 +305,11 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       return;
     }
 
-    this.iframe.inert = true;
-
     const cmd: IframeCommand = {
       type: "bundle",
       payload: code,
     };
     this.iframe.contentWindow.postMessage(cmd, "*");
-
-    setTimeout(() => {
-      if (this.iframe) {
-        this.iframe.inert = false;
-      }
-    }, 100);
   }
 
   public showErrorOverlay(message: string, stack?: string): void {

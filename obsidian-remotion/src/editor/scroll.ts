@@ -1,10 +1,6 @@
 import type { EditorView } from "@codemirror/view";
 import type { PreviewSpan } from "remotion-md";
-import type {
-  Band,
-  InterpolatorSpec,
-  NullArray,
-} from "./scroll-math";
+import type { Band, InterpolatorSpec, NullArray } from "./scroll-math";
 import {
   buildInterpolators,
   findInterpolatorRegion,
@@ -137,7 +133,6 @@ export class ScrollManager {
       this.currentPreviewPositions,
       this.interpolatorRegions,
     );
-    this.performSpanScroll();
   }
 
   /**

@@ -71,10 +71,6 @@ export class BandsLinksRenderer {
     }
   }
 
-  get bands(): NullArray<Band> {
-    return this.currentBands;
-  }
-
   reset(): void {
     this.DOM.bandsContainer.innerHTML = "";
     this.DOM.linkOverlay.innerHTML = "";

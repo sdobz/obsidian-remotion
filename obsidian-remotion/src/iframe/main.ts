@@ -58,6 +58,7 @@ const scroll = new ScrollCoordinator(
 );
 
 function handleReflow(cmd: IframeCommand & { type: "reflow" }): void {
+  console.log("Handle reflow");
   scroll.updateInterpolators(cmd.interpolatorSpecs);
 
   DOM.bandsContainer.style.height = cmd.bandScrollHeight + "px";
@@ -65,28 +66,19 @@ function handleReflow(cmd: IframeCommand & { type: "reflow" }): void {
 
   bandsLinks.renderBands(cmd.bands);
 
-  if (!bundle.sequence) {
-    const { bandScrollTop, playerScrollTop } = scroll.scrollPositions;
-    bandsLinks.renderLinks(
-      players.playerPositions,
-      bandScrollTop,
-      playerScrollTop,
-    );
-    return;
-  }
-
-  players.handleReflow(cmd.players, bundle.sequence);
-
   const { bandScrollTop, playerScrollTop } = scroll.scrollPositions;
   bandsLinks.renderLinks(
     players.playerPositions,
     bandScrollTop,
     playerScrollTop,
   );
+
+  players.handleReflow(cmd.players, bundle.sequence);
   players.scheduleUpdate();
 }
 
 function handleBundle(cmd: IframeCommand & { type: "bundle" }): void {
+  console.log("Handle bundle");
   if (!cmd.payload) return;
 
   const sequence = bundle.loadBundle(cmd.payload, (message, stack) => {
@@ -111,10 +103,8 @@ function handleBundle(cmd: IframeCommand & { type: "bundle" }): void {
   overlays.clearError();
   overlays.hideLoading();
 
-  if (bandsLinks.bands.length > 0) {
-    players.renderAll(sequence);
-    players.scheduleUpdate();
-  }
+  players.renderAll(sequence);
+  players.scheduleUpdate();
 }
 
 function handleShowError(cmd: IframeCommand & { type: "show-error" }): void {
@@ -127,6 +117,7 @@ function handleClearError(): void {
 }
 
 function handleScroll(cmd: IframeCommand & { type: "scroll" }): void {
+  console.log("Handle scroll");
   scroll.scrollTo(cmd.editorScrollTop);
 }
 

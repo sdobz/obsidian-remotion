@@ -5,12 +5,7 @@ import {
   MarkdownRenderer,
 } from "obsidian";
 import { PreviewView, PREVIEW_VIEW_TYPE } from "./preview/preview";
-import {
-  PluginSettings,
-  DEFAULT_SETTINGS,
-  getVaultRootPath,
-  setupPluginDirectory,
-} from "./config";
+import { PluginSettings, DEFAULT_SETTINGS, getVaultRootPath } from "./config";
 import { RemotionSettingTab, ViewManager, StatusBarManager } from "./ui";
 import {
   editorDiagnosticsExtension,
@@ -29,6 +24,9 @@ export default class RemotionPlugin extends Plugin {
   private scrollManager: ScrollManager | null = null;
   private viewManager!: ViewManager;
   private statusBar!: StatusBarManager;
+  private lastActiveMarkdownView: MarkdownView | null = null;
+  private lastActiveFilePath: string | null = null;
+  private lastPreviewView: PreviewView | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -47,9 +45,6 @@ export default class RemotionPlugin extends Plugin {
       this.registerLanguageFeatures();
     }
 
-    // Set plugin directory for runtime
-    setupPluginDirectory(this.app, this.manifest);
-
     // Register the Remotion preview view
     this.registerView(
       PREVIEW_VIEW_TYPE,
@@ -66,9 +61,10 @@ export default class RemotionPlugin extends Plugin {
 
     // Register event handlers
     this.registerEvent(
-      this.app.workspace.on("active-leaf-change", () =>
-        this.onActiveLeafChange(),
-      ),
+      this.app.workspace.on("active-leaf-change", () => {
+        console.log("Active leaf changed");
+        this.onActiveLeafChange();
+      }),
     );
 
     this.registerEvent(
@@ -79,6 +75,7 @@ export default class RemotionPlugin extends Plugin {
 
     // Update state when workspace is ready
     this.app.workspace.onLayoutReady(() => {
+      console.log("Workspace layout ready");
       this.onActiveLeafChange();
     });
   }
@@ -129,13 +126,29 @@ export default class RemotionPlugin extends Plugin {
   private async onActiveLeafChange() {
     const activeView = this.viewManager.getActiveMarkdownView();
     const previewView = this.viewManager.getVisiblePreviewView();
+    const activePath = activeView?.file?.path ?? null;
 
-    this.updateScrollManager(activeView, previewView);
+    const activeViewChanged = activeView !== this.lastActiveMarkdownView;
+    const previewViewChanged = previewView !== this.lastPreviewView;
+    const activePathChanged = activePath !== this.lastActiveFilePath;
+    const previewBecameVisible = !this.lastPreviewView && !!previewView;
 
-    if (activeView && previewView) {
+    if (activeViewChanged || previewViewChanged) {
+      this.updateScrollManager(activeView, previewView);
+    }
+
+    if (
+      activeView &&
+      previewView &&
+      (activePathChanged || previewBecameVisible)
+    ) {
       previewView.resetForNewFile();
       this.schedulePreviewUpdate();
     }
+
+    this.lastActiveMarkdownView = activeView;
+    this.lastActiveFilePath = activePath;
+    this.lastPreviewView = previewView;
   }
 
   private updateScrollManager(
@@ -176,6 +189,7 @@ export default class RemotionPlugin extends Plugin {
     this.statusBar.updateBundle({ status: "loading" });
 
     const version = this.compilationManager.getCurrentVersion();
+    console.log("Starting compilation for version", version);
     const result = await this.compilationManager.compile(activeView, version);
 
     if (!result) {
@@ -226,6 +240,7 @@ export default class RemotionPlugin extends Plugin {
     } else {
       previewView.clearErrorOverlay();
     }
+    console.log("Compilation and preview update complete for version", version);
   }
 
   async onunload() {

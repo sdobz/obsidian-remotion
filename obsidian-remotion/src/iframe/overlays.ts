@@ -7,10 +7,12 @@ export class OverlayManager {
   private hasContent = false;
   private errorOverlay: HTMLElement | null = null;
 
-  constructor(private DOM: {
-    loadingScreen: HTMLElement;
-    playersContainer: HTMLElement;
-  }) {}
+  constructor(
+    private DOM: {
+      loadingScreen: HTMLElement;
+      playersContainer: HTMLElement;
+    },
+  ) {}
 
   showLoading(): void {
     this.DOM.loadingScreen.classList.remove("hidden");

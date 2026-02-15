@@ -2,8 +2,7 @@
 import React from 'react'
 import {AbsoluteFill, staticFile} from 'remotion';
 import {Video} from '@remotion/media';
- 
- 
+
 export const StaticVideo = preview(() => {
   return (
     <AbsoluteFill>
@@ -12,4 +11,3 @@ export const StaticVideo = preview(() => {
   );
 });
 ```
-
