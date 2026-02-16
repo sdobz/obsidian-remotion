@@ -189,6 +189,8 @@ export function createLanguageService(
   nodeModulesPaths: string[],
   virtualFiles: Map<string, string>,
   documentVersions: Map<string, number>,
+  activeMarkdownPath?: string,
+  activeMarkdownText?: string,
 ): {
   languageService: ts.LanguageService;
   languageServiceHost: ts.LanguageServiceHost;
@@ -217,7 +219,11 @@ export function createLanguageService(
     const markdownPath = virtualMarkdownToFileName(virtualPath);
     if (!markdownPath) return undefined;
     try {
-      const markdownText = fs.readFileSync(markdownPath, "utf-8");
+      const markdownText =
+        activeMarkdownPath && markdownPath === activeMarkdownPath
+          ? activeMarkdownText
+          : fs.readFileSync(markdownPath, "utf-8");
+      if (markdownText === undefined) return undefined;
       return synthesizeMarkdownModule(markdownPath, markdownText).code;
     } catch {
       return undefined;
@@ -253,6 +259,9 @@ export function createLanguageService(
       if (isVirtualMarkdownFileName(fileName)) {
         const markdownPath = virtualMarkdownToFileName(fileName);
         if (!markdownPath) return false;
+        if (activeMarkdownPath && markdownPath === activeMarkdownPath) {
+          return true;
+        }
         return fs.existsSync(markdownPath);
       }
       try {

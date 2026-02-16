@@ -16,6 +16,7 @@ describe("language service happy path", () => {
       [],
       virtualFiles,
       documentVersions,
+      undefined,
     );
 
     const syntactic = languageService.getSyntacticDiagnostics("/virtual/a.ts");

@@ -43,6 +43,8 @@ async function bundleVirtualModule(
   entryName: string,
   esbuildInstance: typeof esbuild,
   nodeModulesPaths: string[],
+  activeMarkdownPath?: string,
+  activeMarkdownText?: string,
 ): Promise<BundleResult> {
   const builtins = ["fs", "path", "os", "crypto", "util", "stream", "events"];
   const resolutionDirectory = getResolutionDirectory(
@@ -57,11 +59,29 @@ async function bundleVirtualModule(
     moduleResolution: ts.ModuleResolutionKind.NodeJs,
   };
 
+  const readMarkdownText = (markdownPath: string): string | undefined => {
+    if (activeMarkdownPath && markdownPath === activeMarkdownPath) {
+      return activeMarkdownText;
+    }
+    try {
+      return fs.readFileSync(markdownPath, "utf-8");
+    } catch {
+      return undefined;
+    }
+  };
+
+  const hasMarkdownText = (markdownPath: string): boolean => {
+    if (activeMarkdownPath && markdownPath === activeMarkdownPath) {
+      return true;
+    }
+    return fs.existsSync(markdownPath);
+  };
+
   const moduleResolutionHost: ts.ModuleResolutionHost = {
     fileExists: (fileName) => {
       if (isVirtualMarkdownFileName(fileName)) {
         const markdownPath = virtualMarkdownToFileName(fileName);
-        return markdownPath ? fs.existsSync(markdownPath) : false;
+        return markdownPath ? hasMarkdownText(markdownPath) : false;
       }
       return fs.existsSync(fileName);
     },
@@ -69,7 +89,8 @@ async function bundleVirtualModule(
       if (isVirtualMarkdownFileName(fileName)) {
         const markdownPath = virtualMarkdownToFileName(fileName);
         if (!markdownPath) return undefined;
-        const markdownText = fs.readFileSync(markdownPath, "utf-8");
+        const markdownText = readMarkdownText(markdownPath);
+        if (markdownText === undefined) return undefined;
         return synthesizeMarkdownModule(markdownPath, markdownText).code;
       }
       return fs.readFileSync(fileName, "utf-8");
@@ -108,6 +129,7 @@ async function bundleVirtualModule(
       });
       build.onLoad({ filter: /.*/, namespace: "virtual" }, (args) => {
         if (args.path === entryName) {
+          console.log(`[bundler] Loading virtual entry module ${entryName}`);
           return {
             contents: entryCode,
             loader: "tsx",
@@ -139,7 +161,21 @@ async function bundleVirtualModule(
         const markdownPath = virtualMarkdownToFileName(args.path);
         if (!markdownPath) return null;
         try {
-          const markdownText = fs.readFileSync(markdownPath, "utf-8");
+          console.log(
+            "[bundler] Loading virtual markdown module",
+            args.path,
+            markdownPath,
+          );
+          const markdownText = readMarkdownText(markdownPath);
+          if (markdownText === undefined) {
+            return {
+              errors: [
+                {
+                  text: `Markdown not found on disk: ${markdownPath}`,
+                },
+              ],
+            };
+          }
           const synthesized = synthesizeMarkdownModule(
             markdownPath,
             markdownText,
@@ -181,9 +217,11 @@ async function bundleVirtualModule(
   };
 
   try {
+    console.log("ESBuild instance");
     const result = await esbuildInstance.build({
       stdin: {
-        contents: `const sequence = require("${entryName}").default;\nmodule.exports = sequence;`,
+        contents:
+          'const sequence = require("virtual-entry").default;\nmodule.exports = sequence;',
         resolveDir: path.dirname(entryName),
       },
       bundle: true,
@@ -219,6 +257,8 @@ export async function bundleTypeScriptSource(
   virtualFileName: string,
   esbuildInstance: typeof esbuild | null,
   nodeModulesPaths: string[],
+  activeMarkdownPath?: string,
+  activeMarkdownText?: string,
 ): Promise<BundleResult> {
   if (!esbuildInstance) {
     return {
@@ -232,6 +272,8 @@ export async function bundleTypeScriptSource(
       virtualFileName,
       esbuildInstance,
       nodeModulesPaths,
+      activeMarkdownPath,
+      activeMarkdownText,
     );
   } catch (err) {
     console.error("[remotion] Bundle failed:", err);

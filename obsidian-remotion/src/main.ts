@@ -62,7 +62,6 @@ export default class RemotionPlugin extends Plugin {
     // Register event handlers
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", () => {
-        console.log("Active leaf changed");
         this.onActiveLeafChange();
       }),
     );
@@ -75,7 +74,6 @@ export default class RemotionPlugin extends Plugin {
 
     // Update state when workspace is ready
     this.app.workspace.onLayoutReady(() => {
-      console.log("Workspace layout ready");
       this.onActiveLeafChange();
     });
   }
@@ -189,7 +187,6 @@ export default class RemotionPlugin extends Plugin {
     this.statusBar.updateBundle({ status: "loading" });
 
     const version = this.compilationManager.getCurrentVersion();
-    console.log("Starting compilation for version", version);
     const result = await this.compilationManager.compile(activeView, version);
 
     if (!result) {
@@ -240,7 +237,6 @@ export default class RemotionPlugin extends Plugin {
     } else {
       previewView.clearErrorOverlay();
     }
-    console.log("Compilation and preview update complete for version", version);
   }
 
   async onunload() {

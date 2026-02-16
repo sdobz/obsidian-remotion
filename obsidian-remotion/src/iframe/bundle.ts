@@ -30,7 +30,9 @@ export class BundleManager {
     }
 
     // Module not pre-injected - this is an error
-    throw new Error(`Module not found: ${id}. All modules must be pre-injected.`);
+    throw new Error(
+      `Module not found: ${id}. All modules must be pre-injected.`,
+    );
   }
 
   /**

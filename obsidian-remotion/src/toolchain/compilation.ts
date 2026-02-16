@@ -77,9 +77,10 @@ export class CompilationManager {
 
     const startTime = performance.now();
     let classified: ClassifiedBlock[];
+    const markdownText = activeView.editor.getValue();
 
     try {
-      const blocks = extractCodeBlocks(activeView.editor.getValue());
+      const blocks = extractCodeBlocks(markdownText);
       classified = classifyBlocks(blocks);
       if (classified.length > 0) this.lastExtractedBlocks = classified;
     } catch (err) {
@@ -109,6 +110,8 @@ export class CompilationManager {
       virtualFileName,
       synthesized.code,
       nodeModulesPaths,
+      absoluteNotePath,
+      markdownText,
     );
 
     const tsStart = performance.now();
@@ -118,6 +121,8 @@ export class CompilationManager {
         virtualFileName,
         this.esbuildInstance,
         nodeModulesPaths,
+        absoluteNotePath,
+        markdownText,
       ),
     ]);
     const tsEnd = performance.now();
@@ -175,12 +180,15 @@ export class CompilationManager {
         : String(bundleResult.error)
       : undefined;
 
+    const bundleCode =
+      bundleResult.code || "/* Bundle failed - see diagnostics */";
+
     // Extract runtime modules from synthesized code
     const runtimeModules = getRuntimeModules(synthesized.code);
 
     return {
       previewLocations,
-      bundleCode: bundleResult.code || "/* Bundle failed - see diagnostics */",
+      bundleCode,
       runtimeModules,
       typecheckStatus: { status: errorCount > 0 ? "error" : "ok", errorCount },
       bundleStatus: {
@@ -195,6 +203,8 @@ export class CompilationManager {
     virtualFileName: string,
     sourceText: string,
     nodeModulesPaths: string[],
+    activeMarkdownPath?: string,
+    activeMarkdownText?: string,
   ): void {
     this.lastVirtualFileName = virtualFileName;
     this.lastSynthesizedCode = sourceText;
@@ -208,6 +218,8 @@ export class CompilationManager {
         nodeModulesPaths,
         this.virtualFiles,
         this.documentVersions,
+        activeMarkdownPath,
+        activeMarkdownText,
       );
       this.languageService = languageService;
       this.languageServiceHost = languageServiceHost;
