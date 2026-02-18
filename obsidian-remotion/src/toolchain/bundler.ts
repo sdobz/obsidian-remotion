@@ -129,7 +129,6 @@ async function bundleVirtualModule(
       });
       build.onLoad({ filter: /.*/, namespace: "virtual" }, (args) => {
         if (args.path === entryName) {
-          console.log(`[bundler] Loading virtual entry module ${entryName}`);
           return {
             contents: entryCode,
             loader: "tsx",
@@ -161,11 +160,6 @@ async function bundleVirtualModule(
         const markdownPath = virtualMarkdownToFileName(args.path);
         if (!markdownPath) return null;
         try {
-          console.log(
-            "[bundler] Loading virtual markdown module",
-            args.path,
-            markdownPath,
-          );
           const markdownText = readMarkdownText(markdownPath);
           if (markdownText === undefined) {
             return {
@@ -217,7 +211,6 @@ async function bundleVirtualModule(
   };
 
   try {
-    console.log("ESBuild instance");
     const result = await esbuildInstance.build({
       stdin: {
         contents:
