@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "watch": "tsc --watch"
+    "watch": "tsc --watch",
+    "test": "true"
   },
   "dependencies": {
     "remotion-md-runtime": "*"

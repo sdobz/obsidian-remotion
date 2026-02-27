@@ -2,7 +2,7 @@ import ts from "typescript";
 import { getRuntimeModules } from "./moduleExtraction";
 import * as fs from "fs";
 import * as path from "path";
-import { extractPreviewCallLocations, PreviewSpan } from "previewLocations";
+import { extractPreviewCallLocations, PreviewSpan } from "./previewLocations";
 import {
   createModuleResolver,
   getResolutionDirectory,
@@ -100,7 +100,7 @@ export function compileVirtualModule(
       // Use TypeScript's built-in getDefaultLibFilePath to get proper lib files
       return ts.getDefaultLibFilePath(options);
     },
-    writeFile: () => {},
+    writeFile: () => { },
     getCurrentDirectory: () => {
       // Return the real directory (not virtual path)
       // This allows TypeScript's Node resolution to walk up and find:

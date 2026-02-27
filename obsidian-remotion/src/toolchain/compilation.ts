@@ -5,11 +5,9 @@ import {
   synthesizeVirtualModule,
   mapDiagnosticsToMarkdown,
   parseBundleError,
-  getRuntimeModules,
   type ClassifiedBlock,
   type MarkdownDiagnostic,
   type PreviewSpan,
-  findNodeModulesPaths,
 } from "remotion-md";
 import path from "path";
 import type esbuild from "esbuild";
@@ -25,6 +23,8 @@ import {
   bundleTypeScriptSource,
   bundleDependenciesBundle,
 } from "./bundler";
+import { ResolutionContext } from "./resolution-context";
+import { BundleCache } from "./bundle-cache";
 
 export interface CompilationResult {
   previewLocations: PreviewSpan[];
@@ -47,16 +47,12 @@ export class CompilationManager {
   private lastVirtualFileName: string = "";
   private lastSynthesizedCode: string = "";
   private queries: LanguageServiceQueries | null = null;
-  private lastNodeModulesPaths: string[] = [];
-
-  // Dependency bundling cache
-  private dependenciesCache: {
-    moduleIds: string[];
-    bundledCode: string;
-  } | null = null;
+  private resolutionContext: ResolutionContext | null = null;
+  private bundleCache = new BundleCache();
 
   constructor(private vaultRoot: string) {
-    this.esbuildInstance = loadEsbuild(this.vaultRoot);
+    this.resolutionContext = ResolutionContext.forVaultRoot(vaultRoot);
+    this.esbuildInstance = loadEsbuild(this.resolutionContext);
   }
 
   scheduleUpdate(callback: () => Promise<void>, delay = 300): void {
@@ -100,31 +96,30 @@ export class CompilationManager {
 
     const absoluteNotePath = path.join(this.vaultRoot, notePath);
     const virtualFileName = absoluteNotePath + ".tsx";
-    const nodeModulesPaths = findNodeModulesPaths(
+
+    // Create resolution context for this compilation
+    this.resolutionContext = new ResolutionContext(
       this.vaultRoot,
-      path.dirname(absoluteNotePath),
+      absoluteNotePath,
     );
-    this.lastNodeModulesPaths = nodeModulesPaths;
 
     this.updateLanguageService(
       virtualFileName,
       synthesized.code,
-      nodeModulesPaths,
+      this.resolutionContext,
       absoluteNotePath,
       markdownText,
     );
 
     const tsStart = performance.now();
-    const [bundleResult] = await Promise.all([
-      bundleTypeScriptSource(
-        synthesized.code,
-        virtualFileName,
-        this.esbuildInstance,
-        nodeModulesPaths,
-        absoluteNotePath,
-        markdownText,
-      ),
-    ]);
+    const bundleResult = await bundleTypeScriptSource(
+      synthesized.code,
+      virtualFileName,
+      this.esbuildInstance,
+      this.resolutionContext,
+      absoluteNotePath,
+      markdownText,
+    );
     const tsEnd = performance.now();
 
     if (version !== this.updateVersion) return null;
@@ -183,8 +178,7 @@ export class CompilationManager {
     const bundleCode =
       bundleResult.code || "/* Bundle failed - see diagnostics */";
 
-    // Extract runtime modules from synthesized code
-    const runtimeModules = getRuntimeModules(synthesized.code);
+    const runtimeModules = bundleResult.bundledModules || new Set<string>();
 
     return {
       previewLocations,
@@ -202,7 +196,7 @@ export class CompilationManager {
   private updateLanguageService(
     virtualFileName: string,
     sourceText: string,
-    nodeModulesPaths: string[],
+    context: ResolutionContext,
     activeMarkdownPath?: string,
     activeMarkdownText?: string,
   ): void {
@@ -215,7 +209,7 @@ export class CompilationManager {
     if (!this.languageService || !this.languageServiceHost) {
       const { languageService, languageServiceHost } = createLanguageService(
         virtualFileName,
-        nodeModulesPaths,
+        context.nodeModulesPaths,
         this.virtualFiles,
         this.documentVersions,
         activeMarkdownPath,
@@ -281,48 +275,32 @@ export class CompilationManager {
 
   /**
    * Bundle all dependencies together in one bundle
-   * Caches result and only rebundles when dependencies change
+   * Bundle dependencies with content-hash caching
+   * Only rebundles when module list changes (content hash based)
    */
   async bundleDependencies(moduleIds: string[]): Promise<string> {
-    if (!this.esbuildInstance) {
-      console.error("[remotion] esbuild instance not available");
+    if (!this.esbuildInstance || !this.resolutionContext) {
+      console.error("[remotion] esbuild or resolution context not available");
       return "";
     }
 
-    // Check if cache is valid
-    const sortedIds = [...moduleIds].sort();
-    const cacheValid =
-      this.dependenciesCache &&
-      this.dependenciesCache.moduleIds.length === sortedIds.length &&
-      this.dependenciesCache.moduleIds.every(
-        (id, idx) => id === sortedIds[idx],
+    // Use content-hash cache to avoid rebundling identical module sets
+    return await this.bundleCache.getDepsBundle(moduleIds, async () => {
+      const result = await bundleDependenciesBundle(
+        moduleIds,
+        this.esbuildInstance!,
+        this.resolutionContext!,
       );
 
-    if (cacheValid) {
-      return this.dependenciesCache!.bundledCode;
-    }
+      if (result.error) {
+        console.error(
+          "[remotion] Failed to bundle dependencies:",
+          result.error.message,
+        );
+        return "";
+      }
 
-    // Cache miss - bundle all dependencies together
-    const result = await bundleDependenciesBundle(
-      moduleIds,
-      this.esbuildInstance,
-      this.lastNodeModulesPaths,
-    );
-
-    if (result.error) {
-      console.error(
-        "[remotion] Failed to bundle dependencies:",
-        result.error.message,
-      );
-      return "";
-    }
-
-    // Update cache
-    this.dependenciesCache = {
-      moduleIds: sortedIds,
-      bundledCode: result.code,
-    };
-
-    return result.code;
+      return result.code;
+    });
   }
 }

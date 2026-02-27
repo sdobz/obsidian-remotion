@@ -213,10 +213,7 @@ export default class RemotionPlugin extends Plugin {
     }
 
     // Send bundle output with runtime modules and semantic locations
-    // Always include core dependencies needed by the preview infrastructure
-    const coreModules = ["react", "react-dom/client"];
-    const userModules = Array.from(result.runtimeModules);
-    const allModules = [...new Set([...coreModules, ...userModules])];
+    const allModules = Array.from(result.runtimeModules);
 
     const bundledDependencies =
       await this.compilationManager.bundleDependencies(allModules);

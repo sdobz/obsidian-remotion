@@ -10,6 +10,7 @@ import iframeHtml from "./iframe.html";
 import type { Band, InterpolatorSpec, NullArray } from "../editor/scroll-math";
 import { ScrollDelegate, ScrollManager } from "../editor/scroll";
 import { FileResolver, getMimeType, shimWindow } from "./vault-fetch";
+import { installRuntimeDeps } from "./runtime-deps";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
 
@@ -20,50 +21,50 @@ export interface PlayerStatus {
 /** Message received from iframe */
 export type PreviewMessage =
   | {
-      type: "runtime-error";
-      error?: { message?: string; stack?: string };
-    }
+    type: "runtime-error";
+    error?: { message?: string; stack?: string };
+  }
   | {
-      type: "player-status";
-      players: PlayerStatus[];
-    }
+    type: "player-status";
+    players: PlayerStatus[];
+  }
   | {
-      type: "player-scroll";
-      playerScrollTop: number;
-    }
+    type: "player-scroll";
+    playerScrollTop: number;
+  }
   | {
-      type: "iframe-ready";
-    };
+    type: "iframe-ready";
+  };
 
 /** Message sent to iframe */
 export type IframeCommand =
   | {
-      type: "reset";
-    }
+    type: "reset";
+  }
   | {
-      type: "show-error";
-      message: string;
-      stack?: string;
-    }
+    type: "show-error";
+    message: string;
+    stack?: string;
+  }
   | {
-      type: "clear-error";
-    }
+    type: "clear-error";
+  }
   | {
-      type: "reflow";
-      bandScrollHeight: number;
-      bands: NullArray<Band>;
-      playerScrollHeight: number;
-      players: NullArray<Band>;
-      interpolatorSpecs: InterpolatorSpec[];
-    }
+    type: "reflow";
+    bandScrollHeight: number;
+    bands: NullArray<Band>;
+    playerScrollHeight: number;
+    players: NullArray<Band>;
+    interpolatorSpecs: InterpolatorSpec[];
+  }
   | {
-      type: "bundle";
-      payload: string;
-    }
+    type: "bundle";
+    payload: string;
+  }
   | {
-      type: "scroll";
-      editorScrollTop: number;
-    };
+    type: "scroll";
+    editorScrollTop: number;
+  };
 
 export class PreviewView extends ItemView implements ScrollDelegate {
   private iframe: HTMLIFrameElement | null = null;
@@ -200,27 +201,25 @@ export class PreviewView extends ItemView implements ScrollDelegate {
         cachedDeps[id] = PreviewView.moduleCache.get(id);
       });
 
-      (this.iframe.contentWindow as any).__REMOTION_DEPS__ = cachedDeps;
-      (this.iframe.contentWindow as any).require = (id: string) => {
-        if (cachedDeps[id] !== undefined) return cachedDeps[id];
-        throw new Error(`Module not found: ${id}`);
-      };
+      installRuntimeDeps(this.iframe.contentWindow as any, cachedDeps);
       return;
     }
 
     try {
-      // Execute the bundled code to get the exports object
-      // The bundle is CommonJS format with all dependencies included
-      // eslint-disable-next-line no-eval, @typescript-eslint/no-implied-eval
-      const exports = iframeWindow
-        .Function("exports", "module", `${bundledCode}; return module.exports;`)
-        .call(iframeWindow, {}, { exports: {} });
+      const iframeWindow = this.iframe.contentWindow as any;
+      const iframeDocument = this.iframe.contentDocument;
+      if (!iframeDocument) {
+        throw new Error("Iframe document not available");
+      }
 
-      // Map module IDs to their exports from the bundle
-      // esbuild exports them as m0, m1, m2, etc.
-      const deps: Record<string, unknown> = { ...cachedDeps };
+      const script = iframeDocument.createElement("script");
+      script.textContent = bundledCode;
+      iframeDocument.head.appendChild(script);
+
+      const bundleExports = iframeWindow.__REMOTION_DEPS_BUNDLE__;
+      const deps: Record<string, unknown> = {};
       moduleIds.forEach((id, idx) => {
-        const moduleExport = exports[`m${idx}`];
+        const moduleExport = bundleExports?.[`m${idx}`];
         if (moduleExport !== undefined) {
           deps[id] = moduleExport;
           PreviewView.moduleCache.set(id, moduleExport);
@@ -232,13 +231,8 @@ export class PreviewView extends ItemView implements ScrollDelegate {
       });
 
       // Inject all dependencies into iframe
-      (this.iframe.contentWindow as any).__REMOTION_DEPS__ = deps;
-
-      // Also expose require for the bundle
-      (this.iframe.contentWindow as any).require = (id: string) => {
-        if (deps[id] !== undefined) return deps[id];
-        throw new Error(`Module not found: ${id}`);
-      };
+      // The iframe's BundleManager owns the require() implementation.
+      installRuntimeDeps(iframeWindow, deps);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const errorMsg = `Failed to load dependencies: ${message}`;

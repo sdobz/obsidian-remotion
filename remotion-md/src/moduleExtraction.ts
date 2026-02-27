@@ -1,7 +1,7 @@
 /**
  * Extract imported module names from source code
  */
-export function extractImportedModules(code: string): Set<string> {
+function extractImportedModules(code: string): Set<string> {
   const modules = new Set<string>();
 
   // Match: import ... from 'module' or import ... from "module"
