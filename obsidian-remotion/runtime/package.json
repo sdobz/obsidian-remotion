@@ -1,0 +1,19 @@
+{
+  "name": "obsidian-remotion-runtime",
+  "version": "0.1.0",
+  "description": "Runtime helpers for Obsidian Remotion previews",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "remotion-md-runtime": "*"
+  },
+  "license": "MIT"
+}

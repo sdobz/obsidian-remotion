@@ -1,35 +1,34 @@
-
 ```tsx
-import React from 'react'
-import { useCurrentFrame, interpolate } from 'remotion';
+import React from "react";
+import { useCurrentFrame, interpolate } from "remotion";
+import { render } from "obsidian-remotion-runtime";
+import { Player } from "./Player.md";
 
 const Title: React.FC = () => {
-	const frame = useCurrentFrame(); 
-	const opacity = interpolate(frame, [0, 30], [0, 1]);
+  const frame = useCurrentFrame();
+  const opacity = interpolate(frame, [0, 30], [0, 1]);
 
-	return (
-		<div
-			style={{
-				fontSize: 90,
-				fontWeight: 700,
-				color: '#fff',
-				background: '#111',
-				width: '100%',
-				height: '100%',
-				display: 'flex',
-				alignItems: 'center',
-				justifyContent: 'center',
-				opacity,
-			}}
-		>
-			Hello Remotion!
-		</div>
-	);
+  return (
+    <div
+      style={{
+        fontSize: 90,
+        fontWeight: 700,
+        color: "#fff",
+        background: "#111",
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        opacity,
+      }}
+    >
+      Hello Remotion!
+    </div>
+  );
 };
 ```
 
 ```tsx
-export const BasicTitle = preview(
-	() => <Title /> 
-)
+export const BasicTitle = render(() => <Player component={Title} />);
 ```

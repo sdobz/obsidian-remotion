@@ -1,9 +1,10 @@
 ```typescript
-import React from 'react'
+import React from "react";
 ```
 
 ```tsx
-import { BasicTitle } from './Basic.md'
+import { BasicTitle } from "./Basic.md";
+import { render } from "obsidian-remotion-runtime";
 
-preview(() => <BasicTitle />)
+render(() => <BasicTitle />);
 ```

@@ -1,17 +1,17 @@
 export interface CodeBlock {
-    content: string;
-    language: string;
-    startLine: number;
-    endLine: number;
-    startOffset: number;
-    endOffset: number;
+  content: string;
+  language: string;
+  startLine: number;
+  endLine: number;
+  startOffset: number;
+  endOffset: number;
 }
 
-export type BlockType = 'module' | 'jsx-entry';
+export type BlockType = "module" | "jsx-entry";
 
 export interface ClassifiedBlock extends CodeBlock {
-    type: BlockType;
-    blockIndex: number;
+  type: BlockType;
+  blockIndex: number;
 }
 
 /**
@@ -21,89 +21,95 @@ export interface ClassifiedBlock extends CodeBlock {
  * @returns Array of extracted code blocks with line and offset information
  */
 export function extractCodeBlocks(content: string): CodeBlock[] {
-    const blocks: CodeBlock[] = [];
-    const lines = content.split('\n');
+  const blocks: CodeBlock[] = [];
+  const lines = content.split("\n");
 
-    let i = 0;
-    let currentOffset = 0;
+  let i = 0;
+  let currentOffset = 0;
 
-    while (i < lines.length) {
-        const line = lines[i];
-        const trimmed = line.trim();
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
 
-        // Look for opening fence (``` or ~~~)
-        if ((trimmed.startsWith('```') || trimmed.startsWith('~~~')) && trimmed.length >= 3) {
-            const fence = trimmed.startsWith('```') ? '```' : '~~~';
-            const fenceChar = fence[0];
+    // Look for opening fence (``` or ~~~)
+    if (
+      (trimmed.startsWith("```") || trimmed.startsWith("~~~")) &&
+      trimmed.length >= 3
+    ) {
+      const fence = trimmed.startsWith("```") ? "```" : "~~~";
+      const fenceChar = fence[0];
 
-            // Extract language from the opening fence
-            const languageMatch = trimmed.slice(3).match(/^\w+/);
-            const language = languageMatch ? languageMatch[0] : '';
+      // Extract language from the opening fence
+      const languageMatch = trimmed.slice(3).match(/^\w+/);
+      const language = languageMatch ? languageMatch[0] : "";
 
-            // Only process ts, tsx, typescript blocks
-            if (['ts', 'tsx', 'typescript'].includes(language)) {
-                const startLine = i;
-                const startOffset = currentOffset;
-                let blockContent = '';
+      // Only process ts, tsx, typescript blocks
+      if (["ts", "tsx", "typescript"].includes(language)) {
+        const startLine = i;
+        const startOffset = currentOffset;
+        let blockContent = "";
 
-                i++; // Move to line after opening fence
-                currentOffset += line.length + 1; // +1 for newline
+        i++; // Move to line after opening fence
+        currentOffset += line.length + 1; // +1 for newline
 
-                // Collect content until closing fence
-                let foundClosing = false;
-                while (i < lines.length) {
-                    const contentLine = lines[i];
-                    const contentTrimmed = contentLine.trim();
+        // Collect content until closing fence
+        let foundClosing = false;
+        while (i < lines.length) {
+          const contentLine = lines[i];
+          const contentTrimmed = contentLine.trim();
 
-                    // Check for closing fence
-                    if (contentTrimmed.startsWith(fenceChar) && contentTrimmed.length >= 3) {
-                        const endOffset = currentOffset;
-                        const endLine = i;
+          // Check for closing fence
+          if (
+            contentTrimmed.startsWith(fenceChar) &&
+            contentTrimmed.length >= 3
+          ) {
+            const endOffset = currentOffset;
+            const endLine = i;
 
-                        blocks.push({
-                            content: blockContent.trimEnd(), // Remove trailing whitespace
-                            language,
-                            startLine,
-                            endLine,
-                            startOffset,
-                            endOffset,
-                        });
+            blocks.push({
+              content: blockContent.trimEnd(), // Remove trailing whitespace
+              language,
+              startLine,
+              endLine,
+              startOffset,
+              endOffset,
+            });
 
-                        currentOffset += contentLine.length + 1;
-                        i++;
-                        foundClosing = true;
-                        break;
-                    }
-
-                    blockContent += contentLine + '\n';
-                    currentOffset += contentLine.length + 1;
-                    i++;
-                }
-                
-                // If we didn't find a closing fence (incomplete block), still include it
-                // to allow preview to continue working with partial content
-                if (!foundClosing && blockContent.trim()) {
-                    blocks.push({
-                        content: blockContent.trimEnd(),
-                        language,
-                        startLine,
-                        endLine: i - 1,
-                        startOffset,
-                        endOffset: currentOffset,
-                    });
-                }
-            } else {
-                // Not a ts/tsx block, skip to next line
-                currentOffset += line.length + 1;
-                i++;
-            }
-        } else {
-            currentOffset += line.length + 1;
+            currentOffset += contentLine.length + 1;
             i++;
-        }
-    }
+            foundClosing = true;
+            break;
+          }
 
-    return blocks;
+          blockContent += contentLine + "\n";
+          currentOffset += contentLine.length + 1;
+          i++;
+        }
+
+        // If we didn't find a closing fence (incomplete block), still include it
+        // to allow preview to continue working with partial content
+        if (!foundClosing && blockContent.trim()) {
+          blocks.push({
+            content: blockContent.trimEnd(),
+            language,
+            startLine,
+            endLine: i - 1,
+            startOffset,
+            endOffset: currentOffset,
+          });
+        }
+      } else {
+        // Not a ts/tsx block, skip to next line
+        currentOffset += line.length + 1;
+        i++;
+      }
+    } else {
+      currentOffset += line.length + 1;
+      i++;
+    }
+  }
+
+  return blocks;
 }
 
 /**
@@ -115,37 +121,37 @@ export function extractCodeBlocks(content: string): CodeBlock[] {
  * @returns { line, column } in markdown document
  */
 export function blockPositionToMarkdown(
-    block: CodeBlock,
-    lineInBlock: number
+  block: CodeBlock,
+  lineInBlock: number,
 ): { line: number; column: number } {
-    // +1 for the opening fence line, then add lineInBlock
-    return {
-        line: block.startLine + 1 + lineInBlock,
-        column: 0,
-    };
+  // +1 for the opening fence line, then add lineInBlock
+  return {
+    line: block.startLine + 1 + lineInBlock,
+    column: 0,
+  };
 }
 
 function isLikelyJsxEntry(content: string): boolean {
-    const trimmed = content.trim();
-    
-    // Check for preview(...) call pattern (may include import statement)
-    // Match: optional imports, then preview(...) call
-    const previewPattern = /(?:import\s+.*?;\s*)*preview\s*\(/s;
-    if (previewPattern.test(trimmed)) {
-        return true;
-    }
-    
-    // Legacy: bare JSX detection
-    if (!trimmed.startsWith('<')) return false;
+  const trimmed = content.trim();
 
-    // Heuristic: if it contains module keywords, treat as module code
-    const keywordPattern = /\b(import|export|const|function|class)\b/;
-    if (keywordPattern.test(trimmed)) return false;
-
-    // Require a JSX-like closing
-    if (!(trimmed.endsWith('>') || trimmed.endsWith('/>'))) return false;
-
+  // Check for render(...) call pattern (may include import statement)
+  // Match: optional imports, then render(...) call
+  const entryPattern = /(?:import\s+.*?;\s*)*render\s*\(/s;
+  if (entryPattern.test(trimmed)) {
     return true;
+  }
+
+  // Legacy: bare JSX detection
+  if (!trimmed.startsWith("<")) return false;
+
+  // Heuristic: if it contains module keywords, treat as module code
+  const keywordPattern = /\b(import|export|const|function|class)\b/;
+  if (keywordPattern.test(trimmed)) return false;
+
+  // Require a JSX-like closing
+  if (!(trimmed.endsWith(">") || trimmed.endsWith("/>"))) return false;
+
+  return true;
 }
 
 /**
@@ -155,9 +161,9 @@ function isLikelyJsxEntry(content: string): boolean {
  * @returns Classified blocks with block indices
  */
 export function classifyBlocks(blocks: CodeBlock[]): ClassifiedBlock[] {
-    return blocks.map((block, index) => ({
-        ...block,
-        blockIndex: index,
-        type: isLikelyJsxEntry(block.content) ? 'jsx-entry' : 'module',
-    }));
+  return blocks.map((block, index) => ({
+    ...block,
+    blockIndex: index,
+    type: isLikelyJsxEntry(block.content) ? "jsx-entry" : "module",
+  }));
 }

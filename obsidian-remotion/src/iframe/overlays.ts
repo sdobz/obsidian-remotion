@@ -37,9 +37,9 @@ export class OverlayManager {
         ">
             <div>
                 <div style="font-size: 48px; margin-bottom: 16px;">📹</div>
-                <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No Previews</div>
+                <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No Rendered Components</div>
                 <div style="font-size: 14px; line-height: 1.5; max-width: 400px;">
-                    Add a TypeScript/TSX code block with a <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">preview()</code> call to see Remotion content here.
+                  Add a TypeScript/TSX code block with a <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">render()</code> call to see content here.
                 </div>
             </div>
         </div>

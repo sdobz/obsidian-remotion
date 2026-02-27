@@ -6,16 +6,6 @@
 import type { NullArray, Band } from "../editor/scroll-math";
 import type { Sequence } from "./bundle";
 
-const DEFAULT_OPTIONS = {
-  durationInFrames: 150,
-  fps: 30,
-  compositionWidth: 1280,
-  compositionHeight: 720,
-  controls: true,
-  loop: false,
-  autoPlay: false,
-};
-
 export class PlayerManager {
   private positions: NullArray<Band> = [];
   private previousHeights: number[] = [];
@@ -27,18 +17,25 @@ export class PlayerManager {
     private sendMessage: (msg: any) => void,
   ) {}
 
-  renderAll(sequence: Sequence): void {
-    const deps = (window as any).__REMOTION_DEPS__ || {};
-    const React = deps.react;
-    const PlayerModule = deps["@remotion/player"];
-    const Player =
-      (PlayerModule && PlayerModule.Player) ||
-      (PlayerModule && PlayerModule.default) ||
-      PlayerModule;
-    const ReactDomClient = deps["react-dom/client"] || deps["react-dom"];
+  private requireModule(id: string): any {
+    const runtimeRequire = (window as any).require;
+    if (typeof runtimeRequire !== "function") {
+      throw new Error("Missing require() runtime for dependencies");
+    }
+    return runtimeRequire(id);
+  }
 
-    if (!React || !ReactDomClient || !Player) {
-      throw new Error("Missing React, ReactDOM, or @remotion/player");
+  renderAll(sequence: Sequence): void {
+    const React = this.requireModule("react");
+    let ReactDomClient: any;
+    try {
+      ReactDomClient = this.requireModule("react-dom/client");
+    } catch {
+      ReactDomClient = this.requireModule("react-dom");
+    }
+
+    if (!React || !ReactDomClient) {
+      throw new Error("Missing React or ReactDOM");
     }
 
     if (!ReactDomClient.createRoot) {
@@ -50,9 +47,12 @@ export class PlayerManager {
     }
 
     const nodes = sequence.scenes.map((scene: any, idx: number) => {
-      const playerOptions = scene.options
-        ? { ...DEFAULT_OPTIONS, ...scene.options }
-        : DEFAULT_OPTIONS;
+      const props =
+        scene.options &&
+        typeof scene.options === "object" &&
+        !Array.isArray(scene.options)
+          ? scene.options
+          : {};
 
       return React.createElement(
         "div",
@@ -64,18 +64,7 @@ export class PlayerManager {
         React.createElement(
           "div",
           { className: "player-wrapper" },
-          React.createElement(Player, {
-            component: scene.component,
-            durationInFrames: playerOptions.durationInFrames,
-            fps: playerOptions.fps,
-            compositionWidth: playerOptions.compositionWidth,
-            compositionHeight: playerOptions.compositionHeight,
-            controls: playerOptions.controls,
-            loop: playerOptions.loop,
-            autoPlay: playerOptions.autoPlay,
-            acknowledgeRemotionLicense: true,
-            style: { width: "100%" },
-          }),
+          React.createElement(scene.component as any, props),
         ),
       );
     });

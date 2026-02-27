@@ -1,15 +1,19 @@
 ```tsx
-import React from 'react'
+import React from "react";
+import { render } from "obsidian-remotion-runtime";
 
 const Bin = () => {
-	return <div>test?</div>
-}
+  return <div>test?</div>;
+};
 
-preview(Bin)
-
+render(Bin);
 ```
 
-Is an HTML list
+A "Bin" is a list of filesystem locations with selection criteria and filters. It is used to create a workflow for file ingest.
 
-Has filters on top:
-- not mentioned in notes
+An example workflow is: Map all files to named slices
+
+This requires two capabilities:
+
+- [ ] An `obsidian-remotion-runtime` capability to "list files"
+- [ ] A way to use the `.md` file as UI state

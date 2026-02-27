@@ -1,8 +1,6 @@
-
 ## Media Ingest
 
-Add "preview(Bin)"
+Add "render(Bin)"
 
 Widgets: Use "bridge"
 Use `Pick<Obsidian>` types
-

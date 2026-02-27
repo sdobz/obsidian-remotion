@@ -17,22 +17,14 @@ export class BundleManager {
   private currentSequence: Sequence | null = null;
 
   constructor() {
-    // Expose require globally so esbuild's bundle can use it
-    // All dependencies are pre-injected by parent window
-    (window as any).require = this.require.bind(this);
-  }
-
-  // Minimal synchronous require - all modules are pre-injected
-  private require(id: string): unknown {
-    const deps = (window as any).__REMOTION_DEPS__;
-    if (deps && deps[id] !== undefined) {
-      return deps[id];
+    // Ensure require exists for the user bundle
+    if (typeof (window as any).require !== "function") {
+      (window as any).require = (id: string) => {
+        throw new Error(
+          `Module not found: ${id}. All modules must be pre-injected.`,
+        );
+      };
     }
-
-    // Module not pre-injected - this is an error
-    throw new Error(
-      `Module not found: ${id}. All modules must be pre-injected.`,
-    );
   }
 
   /**
@@ -50,7 +42,7 @@ export class BundleManager {
       const mod = (window as any).RemotionBundle;
       let sequence = (mod && mod.default) || mod;
 
-      // If no explicit default export, build scenes from preview() calls
+      // If no explicit default export, build scenes from render() calls
       if (!sequence || !sequence.scenes) {
         const previewComponents = (globalThis as any).__previewComponents || [];
         const previewOptions = (globalThis as any).__previewOptions || [];
@@ -65,7 +57,7 @@ export class BundleManager {
           );
           sequence = { scenes };
         } else {
-          // No previews - return null to indicate empty state
+          // No renders - return null to indicate empty state
           this.currentSequence = null;
           return null;
         }

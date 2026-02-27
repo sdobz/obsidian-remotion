@@ -277,6 +277,74 @@ export async function bundleTypeScriptSource(
   }
 }
 
+function findPackageEntryPoint(pkgDir: string): string | null {
+  const pkgJsonPath = path.join(pkgDir, "package.json");
+  if (!fs.existsSync(pkgJsonPath)) {
+    // No package.json, try index.js
+    const indexPath = path.join(pkgDir, "index.js");
+    return fs.existsSync(indexPath) ? indexPath : null;
+  }
+
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+    // Try to find an entry point
+    const entryPoint =
+      pkg.main ||
+      (pkg.exports && typeof pkg.exports === "string" ? pkg.exports : null) ||
+      (pkg.browser && typeof pkg.browser === "string" ? pkg.browser : null);
+
+    if (entryPoint) {
+      const resolvedPath = path.join(pkgDir, entryPoint);
+      if (fs.existsSync(resolvedPath)) {
+        return resolvedPath;
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+
+  // Default to index.js
+  const indexPath = path.join(pkgDir, "index.js");
+  return fs.existsSync(indexPath) ? indexPath : null;
+}
+
+function createMultiPathResolvePlugin(
+  nodeModulesPaths: string[],
+): esbuild.Plugin {
+  return {
+    name: "multi-path-resolve",
+    setup(build) {
+      // Only try to resolve npm packages (not relative/absolute paths)
+      build.onResolve({ filter: /^(@[a-zA-Z0-9-]+\/)?[a-zA-Z0-9-_.]+/ }, (args) => {
+        // Skip if relative or absolute
+        if (args.path.startsWith(".") || args.path.startsWith("/")) {
+          return null;
+        }
+
+        // Extract the base package name
+        let basePkgName = args.path.split("/")[0];
+        if (basePkgName.startsWith("@")) {
+          basePkgName = args.path.split("/").slice(0, 2).join("/");
+        }
+
+        // Try each node_modules path
+        for (const modulesPath of nodeModulesPaths) {
+          const pkgDir = path.join(modulesPath, basePkgName);
+          if (!fs.existsSync(pkgDir)) continue;
+
+          // Found the package directory
+          const entryPoint = findPackageEntryPoint(pkgDir);
+          if (entryPoint) {
+            return { path: entryPoint };
+          }
+        }
+
+        return null;
+      });
+    },
+  };
+}
+
 export async function bundleDependenciesBundle(
   moduleIds: string[],
   esbuildInstance: typeof esbuild | null,
@@ -311,7 +379,7 @@ export async function bundleDependenciesBundle(
       write: false,
       minify: false,
       logLevel: "error",
-      nodePaths: nodeModulesPaths,
+      plugins: [createMultiPathResolvePlugin(nodeModulesPaths)],
     });
 
     if (result.outputFiles.length > 0) {

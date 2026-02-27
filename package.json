@@ -3,13 +3,15 @@
   "private": true,
   "workspaces": [
     "remotion-md",
+    "remotion-md/runtime",
     "obsidian-remotion",
+    "obsidian-remotion/runtime",
     "examples"
   ],
   "scripts": {
-    "build": "npm run build -w remotion-md && npm run build -w obsidian-remotion",
+    "build": "npm run build -w remotion-md-runtime && npm run build -w obsidian-remotion-runtime && npm run build -w remotion-md && npm run build -w obsidian-remotion",
     "test": "npm test -w remotion-md",
-    "clean": "npm run clean -w remotion-md && npm run clean -w obsidian-remotion"
+    "clean": "npm run clean -w remotion-md-runtime && npm run clean -w obsidian-remotion-runtime && npm run clean -w remotion-md && npm run clean -w obsidian-remotion"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

@@ -9,6 +9,7 @@
     "@remotion/media": "4.0.417",
     "@remotion/player": "4.0.417",
     "esbuild": "^0.27.2",
+    "obsidian-remotion-runtime": "*",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "remotion": "4.0.417",

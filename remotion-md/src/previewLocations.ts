@@ -1,7 +1,7 @@
 import ts from "typescript";
 
 /**
- * Semantic location of a preview() call in source code.
+ * Semantic location of a render() call in source code.
  * Includes line/column position and length for scroll synchronization.
  */
 export interface PreviewSpan {
@@ -11,7 +11,7 @@ export interface PreviewSpan {
   column: number;
   /** Character offset in entire file (0-based) */
   pos: number;
-  /** Length of the preview() call */
+  /** Length of the render() call */
   length: number;
   /** Full text of the preview call */
   text: string;
@@ -23,7 +23,7 @@ export interface PreviewSpan {
 export type PreviewCallLocation = PreviewSpan;
 
 /**
- * Extract locations of all preview() function calls from TypeScript AST.
+ * Extract locations of all render() function calls from TypeScript AST.
  * Used to anchor scroll positions in the preview pane.
  *
  * @param sourceFile TypeScript SourceFile to analyze
@@ -35,14 +35,14 @@ export function extractPreviewCallLocations(
   const locations: PreviewSpan[] = [];
 
   function visit(node: ts.Node) {
-    // Look for call expressions like preview(...)
+    // Look for call expressions like render(...)
     if (ts.isCallExpression(node)) {
       const callExpr = node as ts.CallExpression;
 
-      // Check if the function being called is the identifier 'preview'
+      // Check if the function being called is the identifier 'render'
       if (
         ts.isIdentifier(callExpr.expression) &&
-        callExpr.expression.text === "preview"
+        callExpr.expression.text === "render"
       ) {
         const start = callExpr.getStart(sourceFile);
         const end = callExpr.getEnd();
@@ -71,5 +71,5 @@ export function extractPreviewCallLocations(
 }
 
 /**
- * Detect preview() misuse, such as passing JSX instead of a component reference.
+ * Detect render() misuse, such as passing JSX instead of a component reference.
  */

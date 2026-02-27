@@ -226,7 +226,7 @@ export class PreviewView extends ItemView implements ScrollDelegate {
           PreviewView.moduleCache.set(id, moduleExport);
         } else {
           console.warn(
-            `[remotion] Module ${id} not found in bundle at index ${idx}`,
+            `[remotion] Module ${id} not found in bundle at index ${idx}. This may happen if the module failed to bundle.`,
           );
         }
       });
@@ -299,8 +299,8 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     await this.injectDependencies(moduleIds, bundledDeps);
 
     // Check if injection failed (error overlay would be shown)
-    const deps = (this.iframe.contentWindow as any).__REMOTION_DEPS__;
-    if (!deps || Object.keys(deps).length === 0) {
+    const runtimeRequire = (this.iframe.contentWindow as any).require;
+    if (typeof runtimeRequire !== "function") {
       console.warn("[Preview] Dependency injection failed, not sending bundle");
       return;
     }
