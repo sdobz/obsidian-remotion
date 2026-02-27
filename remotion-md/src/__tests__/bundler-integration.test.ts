@@ -67,8 +67,6 @@ export const MyComponent = () => (
         expect(userBundle.bundledModules).toBeDefined();
         expect(userBundle.bundledModules!.size).toBeGreaterThan(0);
 
-        console.log("User bundle modules:", Array.from(userBundle.bundledModules!));
-
         // Step 3: Bundle dependencies
         const moduleIds = Array.from(userBundle.bundledModules!);
         const depsBundle = await bundleDependenciesBundle(
@@ -82,9 +80,6 @@ export const MyComponent = () => (
 
         expect(depsBundle.code).toBeTruthy();
         expect(depsBundle.code.length).toBeGreaterThan(100);
-
-        console.log("Dependencies bundle length:", depsBundle.code.length);
-        console.log("Dependencies bundle first 200 chars:", depsBundle.code.substring(0, 200));
 
         // Step 4: Verify the dependencies bundle has the expected structure
         expect(depsBundle.code).toContain("__REMOTION_DEPS_BUNDLE__");
@@ -114,11 +109,6 @@ export const MyComponent = () => (
                 resolutionDirectory: harness.vault.root,
             }
         );
-
-        console.log("=== Dependencies Bundle Analysis ===");
-        console.log("Bundle code length:", depsBundle.code.length);
-        console.log("Bundle error:", depsBundle.error);
-        console.log("First 500 chars:", depsBundle.code.substring(0, 500));
 
         expect(depsBundle.code).toBeTruthy();
         expect(depsBundle.code.length).toBeGreaterThan(100);
@@ -184,10 +174,6 @@ export const MyComponent = () => <Player />;
             }
         );
 
-        console.log("=== Full Bundle Code ===");
-        console.log(depsBundle.code);
-        console.log("=== End Bundle Code ===");
-
         // The bundle creates `var __REMOTION_DEPS_BUNDLE__ = ...`
         // We need to eval it in a context where we can access that variable
         let capturedBundle: any;
@@ -204,18 +190,10 @@ export const MyComponent = () => <Player />;
         const func = new Function("__REMOTION_DEPS_BUNDLE__", depsBundle.code + "; return __REMOTION_DEPS_BUNDLE__;");
         const result = func(sandbox.__REMOTION_DEPS_BUNDLE__);
 
-        console.log("Result:", result);
-        console.log("Result type:", typeof result);
-        console.log("Result keys:", result ? Object.keys(result) : "null/undefined");
-
         // Verify the bundle object exists and has the expected structure
         expect(result).toBeDefined();
         expect(result.m0).toBeDefined();
         expect(result.m1).toBeDefined();
-
-        console.log("Bundle exports:", Object.keys(result));
-        console.log("m0 keys:", Object.keys(result.m0));
-        console.log("m1 keys:", Object.keys(result.m1));
 
         // Verify m1 has jsx-runtime exports (jsx, jsxs, Fragment)
         expect(result.m1.jsx).toBeDefined();

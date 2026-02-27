@@ -25,7 +25,6 @@ describe("Bundle error cases and untested paths", () => {
             );
 
             // Even with error, should have bundledModules property
-            console.log("=== Result with no esbuild ===", result);
             expect(result.error).toBeDefined();
             // UNTESTED: What happens to bundledModules when esbuild is unavailable?
             // Currently it's NOT in the return object
@@ -52,22 +51,12 @@ describe("Bundle error cases and untested paths", () => {
                 resolutionContext,
             );
 
-            console.log("=== Result with missing module ===");
-            console.log("Error:", result.error?.message);
-            console.log("Code length:", result.code.length);
-            console.log("Has bundledModules:", !!result.bundledModules);
-            console.log("bundledModules:", result.bundledModules);
-            console.log("bundledModules size:", result.bundledModules?.size);
-
             // UNTESTED ISSUE: If bundleTypeScriptSource errors, bundledModules is undefined
             // This causes runtimeModules to be empty Set in compilation.ts
             // Which causes bundleDependencies to receive empty array
             // Which might produce empty code string
             if (result.error) {
                 expect(result.bundledModules).toBeUndefined();
-                console.log(
-                    "WARNING: bundledModules is undefined on error - this could cause empty dependencies bundle",
-                );
             }
         } finally {
             fs.rmSync(tmpDir, { recursive: true, force: true });
