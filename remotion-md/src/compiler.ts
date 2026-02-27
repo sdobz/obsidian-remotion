@@ -1,5 +1,4 @@
 import ts from "typescript";
-import { getRuntimeModules } from "./moduleExtraction";
 import * as fs from "fs";
 import * as path from "path";
 import { extractPreviewCallLocations, PreviewSpan } from "./previewLocations";
@@ -14,7 +13,6 @@ import { synthesizeMarkdownModule } from "./synthesis";
 export interface CompileResult {
   code: string;
   diagnostics: readonly ts.Diagnostic[];
-  runtimeModules: Set<string>;
   previewLocations: PreviewSpan[];
 }
 
@@ -31,9 +29,6 @@ export function compileVirtualModule(
   nodeModulesPaths: string[] = [],
   options: { includeLib?: boolean } = {},
 ): CompileResult {
-  // Extract runtime modules from the code
-  const runtimeModules = getRuntimeModules(sourceText);
-
   // Derive the directory for module resolution from the file's location
   const resolutionDirectory = getResolutionDirectory(
     nodeModulesPaths,
@@ -169,5 +164,5 @@ export function compileVirtualModule(
     undefined,
   );
 
-  return { code: output, diagnostics, runtimeModules, previewLocations };
+  return { code: output, diagnostics, previewLocations };
 }
