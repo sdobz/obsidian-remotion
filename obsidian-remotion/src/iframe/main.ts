@@ -21,6 +21,12 @@ import { BandsLinksRenderer } from "./bands-links";
 import { ScrollCoordinator } from "./scroll";
 import { OverlayManager } from "./overlays";
 
+/**
+ * Import runtime helpers to ensure React/ReactDOM are bundled as dependencies
+ * This triggers the bundler to discover react and react-dom as npm dependencies
+ */
+import "obsidian-remotion-runtime";
+
 // Shared DOM cache - all elements are known to exist in the iframe structure
 const DOM = {
   loadingScreen: document.getElementById("loading-screen")!,

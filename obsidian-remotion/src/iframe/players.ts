@@ -15,42 +15,35 @@ export class PlayerManager {
   constructor(
     private DOM: { playersContainer: HTMLElement },
     private sendMessage: (msg: any) => void,
-  ) {}
-
-  private requireModule(id: string): any {
-    const runtimeRequire = (window as any).require;
-    if (typeof runtimeRequire !== "function") {
-      throw new Error("Missing require() runtime for dependencies");
-    }
-    return runtimeRequire(id);
-  }
+  ) { }
 
   renderAll(sequence: Sequence): void {
-    const React = this.requireModule("react");
-    let ReactDomClient: any;
-    try {
-      ReactDomClient = this.requireModule("react-dom/client");
-    } catch {
-      ReactDomClient = this.requireModule("react-dom");
+    const React = (window as any).require("react");
+    const ReactDomClient = (window as any).require("react-dom/client");
+    const ReactDom = (window as any).require("react-dom");
+
+    if (!React) {
+      throw new Error("Missing React module in runtime");
     }
 
-    if (!React || !ReactDomClient) {
-      throw new Error("Missing React or ReactDOM");
-    }
+    // Try react-dom/client first (React 18+), fall back to react-dom
+    const root = ReactDomClient?.createRoot
+      ? ReactDomClient.createRoot(this.DOM.playersContainer)
+      : (ReactDom as any).createRoot?.(this.DOM.playersContainer);
 
-    if (!ReactDomClient.createRoot) {
-      throw new Error("Missing react-dom/client createRoot");
+    if (!root) {
+      throw new Error("Failed to create React root - ReactDOM unavailable");
     }
 
     if (!this.__root) {
-      this.__root = ReactDomClient.createRoot(this.DOM.playersContainer);
+      this.__root = root;
     }
 
     const nodes = sequence.scenes.map((scene: any, idx: number) => {
       const props =
         scene.options &&
-        typeof scene.options === "object" &&
-        !Array.isArray(scene.options)
+          typeof scene.options === "object" &&
+          !Array.isArray(scene.options)
           ? scene.options
           : {};
 

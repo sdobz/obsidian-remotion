@@ -9,7 +9,8 @@
     "strict": true,
     "skipLibCheck": true,
     "rootDir": "./src",
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "types": ["react", "react-dom"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

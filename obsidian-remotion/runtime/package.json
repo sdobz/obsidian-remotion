@@ -13,6 +13,10 @@
     "watch": "tsc --watch",
     "test": "true"
   },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
   "dependencies": {
     "remotion-md-runtime": "*"
   },

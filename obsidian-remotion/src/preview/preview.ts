@@ -232,11 +232,7 @@ export class PreviewView extends ItemView implements ScrollDelegate {
 
       // Inject all dependencies into iframe
       // The iframe's BundleManager owns the require() implementation.
-<<<<<<< HEAD
       installRuntimeDeps(iframeWindow, deps);
-=======
-      iframeWindow.__REMOTION_DEPS__ = deps;
->>>>>>> 5cef3bd (Uh code churn)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const errorMsg = `Failed to load dependencies: ${message}`;
