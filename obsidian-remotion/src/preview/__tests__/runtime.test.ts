@@ -66,9 +66,9 @@ describe("Runtime", () => {
 
         const readinessEvents: number[] = [];
         runtime.setHandlers({
-            onRuntimeError: () => {},
-            onPlayerStatus: () => {},
-            onPlayerScroll: () => {},
+            onRuntimeError: () => { },
+            onPlayerStatus: () => { },
+            onPlayerScroll: () => { },
             onReady: () => {
                 readinessEvents.push(1);
             },
@@ -94,7 +94,7 @@ describe("Runtime", () => {
             onPlayerStatus: (heights: number[]) => {
                 playerStatuses.push(heights);
             },
-            onPlayerScroll: () => {},
+            onPlayerScroll: () => { },
         });
 
         await runtime.mount(createContainer());
@@ -121,7 +121,7 @@ describe("Runtime", () => {
             onRuntimeError: (message: string, stack: string) => {
                 runtimeErrors.push({ message, stack });
             },
-            onPlayerStatus: () => {},
+            onPlayerStatus: () => { },
             onPlayerScroll: (scrollTop: number) => {
                 playerScrolls.push(scrollTop);
             },

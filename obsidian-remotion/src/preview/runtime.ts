@@ -66,58 +66,58 @@ export interface MountedRuntime {
 }
 
 export interface RuntimeWindowLike {
-        parent: {
-                postMessage(message: RuntimeMessage): void;
-        };
-        RemotionBundle?: unknown;
+    parent: {
+        postMessage(message: RuntimeMessage): void;
+    };
+    RemotionBundle?: unknown;
 }
 
 export function executeBundleString(
-        runtimeWindow: RuntimeWindowLike,
-        payload: string,
+    runtimeWindow: RuntimeWindowLike,
+    payload: string,
 ): RuntimeMessage[] {
-        const emitted: RuntimeMessage[] = [];
+    const emitted: RuntimeMessage[] = [];
 
-        const emit = (message: RuntimeMessage) => {
-                emitted.push(message);
-                runtimeWindow.parent.postMessage(message);
-        };
+    const emit = (message: RuntimeMessage) => {
+        emitted.push(message);
+        runtimeWindow.parent.postMessage(message);
+    };
 
-        try {
-                const executeBundle = new Function("window", payload);
-                executeBundle(runtimeWindow);
+    try {
+        const executeBundle = new Function("window", payload);
+        executeBundle(runtimeWindow);
 
-                if (runtimeWindow.RemotionBundle) {
-                        emit({ type: "player-status", players: [] });
-                }
-        } catch (error: any) {
-                emit({
-                        type: "runtime-error",
-                        error: {
-                                message: error?.message ?? "Unknown runtime error",
-                                stack: error?.stack ?? "",
-                        },
-                });
+        if (runtimeWindow.RemotionBundle) {
+            emit({ type: "player-status", players: [] });
         }
+    } catch (error: any) {
+        emit({
+            type: "runtime-error",
+            error: {
+                message: error?.message ?? "Unknown runtime error",
+                stack: error?.stack ?? "",
+            },
+        });
+    }
 
-        return emitted;
+    return emitted;
 }
 
 export function createRuntimeCommandHandler(
-        runtimeWindow: RuntimeWindowLike,
-        emit: (message: RuntimeMessage) => void,
+    runtimeWindow: RuntimeWindowLike,
+    emit: (message: RuntimeMessage) => void,
 ): (command: RuntimeCommand) => void {
-        runtimeWindow.parent.postMessage = (message: RuntimeMessage) => {
-                emit(message);
-        };
+    runtimeWindow.parent.postMessage = (message: RuntimeMessage) => {
+        emit(message);
+    };
 
-        return (command: RuntimeCommand) => {
-                if (command.type === "bundle") {
-                        executeBundleString(runtimeWindow, command.payload);
-                } else if (command.type === "scroll") {
-                        emit({ type: "player-scroll", playerScrollTop: command.editorScrollTop });
-                }
-        };
+    return (command: RuntimeCommand) => {
+        if (command.type === "bundle") {
+            executeBundleString(runtimeWindow, command.payload);
+        } else if (command.type === "scroll") {
+            emit({ type: "player-scroll", playerScrollTop: command.editorScrollTop });
+        }
+    };
 }
 
 export class Runtime {
@@ -157,13 +157,13 @@ export class Runtime {
         }
     };
 
-    private onRuntimeError(_message: string, _stack: string): void {}
+    private onRuntimeError(_message: string, _stack: string): void { }
 
-    private onPlayerStatus(_heights: number[]): void {}
+    private onPlayerStatus(_heights: number[]): void { }
 
-    private onPlayerScroll(_scrollTop: number): void {}
+    private onPlayerScroll(_scrollTop: number): void { }
 
-    private onReady(): void {}
+    private onReady(): void { }
 
     public setHandlers(handlers: {
         onRuntimeError: (message: string, stack: string) => void;
@@ -174,7 +174,7 @@ export class Runtime {
         this.onRuntimeError = handlers.onRuntimeError;
         this.onPlayerStatus = handlers.onPlayerStatus;
         this.onPlayerScroll = handlers.onPlayerScroll;
-        this.onReady = handlers.onReady ?? (() => {});
+        this.onReady = handlers.onReady ?? (() => { });
     }
 
     public getContentWindow(): Window | null {
