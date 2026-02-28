@@ -3,6 +3,8 @@
  * Manages React player rendering, DOM manipulation, lazy loading/unloading, and positioning
  */
 
+import React from "react";
+import { createRoot } from "react-dom/client";
 import type { NullArray, Band } from "../shared/scroll-math";
 import type { Sequence } from "./bundle";
 
@@ -18,22 +20,7 @@ export class PlayerManager {
   ) { }
 
   renderAll(sequence: Sequence): void {
-    const React = (window as any).require("react");
-    const ReactDomClient = (window as any).require("react-dom/client");
-    const ReactDom = (window as any).require("react-dom");
-
-    if (!React) {
-      throw new Error("Missing React module in runtime");
-    }
-
-    // Try react-dom/client first (React 18+), fall back to react-dom
-    const root = ReactDomClient?.createRoot
-      ? ReactDomClient.createRoot(this.DOM.playersContainer)
-      : (ReactDom as any).createRoot?.(this.DOM.playersContainer);
-
-    if (!root) {
-      throw new Error("Failed to create React root - ReactDOM unavailable");
-    }
+    const root = createRoot(this.DOM.playersContainer);
 
     if (!this.__root) {
       this.__root = root;

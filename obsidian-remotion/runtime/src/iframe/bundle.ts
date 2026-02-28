@@ -16,16 +16,7 @@ export type Sequence = {
 export class BundleManager {
   private currentSequence: Sequence | null = null;
 
-  constructor() {
-    // Ensure require exists for the user bundle
-    if (typeof (window as any).require !== "function") {
-      (window as any).require = (id: string) => {
-        throw new Error(
-          `Module not found: ${id}. All modules must be pre-injected.`,
-        );
-      };
-    }
-  }
+  constructor() { }
 
   /**
    * Load and evaluate a bundle, extracting the sequence

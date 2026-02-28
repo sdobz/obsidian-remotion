@@ -35,11 +35,16 @@
         # node toolchain for plugin dev
         pkgs.nodejs_22
         pkgs.cloc
+        
+        # browser testing
+        pkgs.playwright-driver.browsers
       ];
 
       # Helpful environment hints and PATH adjustments
       shellHook = ''
         export FONTCONFIG_FILE="${fontsConf}"
+        export PLAYWRIGHT_BROWSERS_PATH="${pkgs.playwright-driver.browsers}"
+        export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 
         echo "obsidian-remotion dev-shell: node $(node --version 2>/dev/null || echo n/a)"
         

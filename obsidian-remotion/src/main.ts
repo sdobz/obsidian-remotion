@@ -212,16 +212,7 @@ export default class RemotionPlugin extends Plugin {
       }
     }
 
-    // Send bundle output with runtime modules and semantic locations
-    const allModules = Array.from(result.runtimeModules);
-
-    const bundledDependencies =
-      await this.compilationManager.bundleDependencies(allModules);
-    await previewView.updateBundleOutput(
-      result.bundleCode,
-      allModules,
-      bundledDependencies,
-    );
+    await previewView.updateBundleOutput(result.bundleCode);
     this.scrollManager?.handlePreviewSpans(result.previewLocations);
 
     if (result.bundleStatus.status === "error" && result.bundleStatus.error) {

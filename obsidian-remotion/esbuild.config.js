@@ -23,6 +23,7 @@ const htmlPlugin = {
 
       if (iframeResult.outputFiles && iframeResult.outputFiles.length > 0) {
         const iframeScript = iframeResult.outputFiles[0].text;
+
         // Replace the script tag placeholder with the actual iframe code
         html = html.replace(
           "<script>__IFRAME_SCRIPT__</script>",
@@ -43,6 +44,9 @@ const config = {
   bundle: true,
   platform: "node",
   format: "cjs",
+  loader: {
+    ".json": "json", // Enable JSON imports
+  },
   external: [
     "obsidian",
     "electron",

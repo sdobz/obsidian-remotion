@@ -21,15 +21,12 @@ import {
 import {
   loadEsbuild,
   bundleTypeScriptSource,
-  bundleDependenciesBundle,
 } from "./bundler";
 import { ResolutionContext } from "./resolution-context";
-import { BundleCache } from "./bundle-cache";
 
 export interface CompilationResult {
   previewLocations: PreviewSpan[];
   bundleCode: string;
-  runtimeModules: Set<string>;
   typecheckStatus: { status: "ok" | "error"; errorCount: number };
   bundleStatus: { status: "ok" | "error"; error?: string };
   diagnostics: MarkdownDiagnostic[];
@@ -48,7 +45,6 @@ export class CompilationManager {
   private lastSynthesizedCode: string = "";
   private queries: LanguageServiceQueries | null = null;
   private resolutionContext: ResolutionContext | null = null;
-  private bundleCache = new BundleCache();
 
   constructor(private vaultRoot: string) {
     this.resolutionContext = ResolutionContext.forVaultRoot(vaultRoot);
@@ -178,12 +174,9 @@ export class CompilationManager {
     const bundleCode =
       bundleResult.code || "/* Bundle failed - see diagnostics */";
 
-    const runtimeModules = bundleResult.bundledModules || new Set<string>();
-
     return {
       previewLocations,
       bundleCode,
-      runtimeModules,
       typecheckStatus: { status: errorCount > 0 ? "error" : "ok", errorCount },
       bundleStatus: {
         status: bundleError ? "error" : "ok",
@@ -273,34 +266,4 @@ export class CompilationManager {
     return result;
   }
 
-  /**
-   * Bundle all dependencies together in one bundle
-   * Bundle dependencies with content-hash caching
-   * Only rebundles when module list changes (content hash based)
-   */
-  async bundleDependencies(moduleIds: string[]): Promise<string> {
-    if (!this.esbuildInstance || !this.resolutionContext) {
-      console.error("[remotion] esbuild or resolution context not available");
-      return "";
-    }
-
-    // Use content-hash cache to avoid rebundling identical module sets
-    return await this.bundleCache.getDepsBundle(moduleIds, async () => {
-      const result = await bundleDependenciesBundle(
-        moduleIds,
-        this.esbuildInstance!,
-        this.resolutionContext!,
-      );
-
-      if (result.error) {
-        console.error(
-          "[remotion] Failed to bundle dependencies:",
-          result.error.message,
-        );
-        return "";
-      }
-
-      return result.code;
-    });
-  }
 }

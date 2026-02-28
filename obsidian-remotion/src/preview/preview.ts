@@ -10,7 +10,6 @@ import iframeHtml from "./iframe.html";
 import type { Band, InterpolatorSpec, NullArray } from "obsidian-remotion-runtime";
 import { ScrollDelegate, ScrollManager } from "../editor/scroll";
 import { FileResolver, getMimeType, shimWindow } from "./vault-fetch";
-import { installRuntimeDeps } from "./runtime-deps";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
 
@@ -69,8 +68,6 @@ export type IframeCommand =
 export class PreviewView extends ItemView implements ScrollDelegate {
   private iframe: HTMLIFrameElement | null = null;
   private scrollManager: ScrollManager | null = null;
-  // Vault-scoped module cache - persists across file switches
-  private static moduleCache: Map<string, unknown> = new Map();
 
   private handleMessage = (event: MessageEvent) => {
     const data = event.data as PreviewMessage | undefined;
@@ -165,82 +162,6 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  /**
-   * Pre-inject all dependencies into iframe before bundle execution
-   * All dependencies are bundled together in one bundle by esbuild
-   */
-  private async injectDependencies(
-    moduleIds: string[],
-    bundledCode: string,
-  ): Promise<void> {
-    if (!this.iframe?.contentWindow) {
-      return;
-    }
-
-    if (!bundledCode) {
-      const error = "No dependencies bundled";
-      console.error("[remotion]", error);
-      this.showErrorOverlay(error);
-      return;
-    }
-
-    const iframeWindow = this.iframe.contentWindow as any;
-    shimWindow(
-      iframeWindow,
-      this.createStaticFileResolver(),
-      this.app.vault.readBinary.bind(this.app.vault),
-    );
-
-    const cachedDeps: Record<string, unknown> = {};
-    const hasAllCached = moduleIds.every((id) =>
-      PreviewView.moduleCache.has(id),
-    );
-
-    if (hasAllCached) {
-      moduleIds.forEach((id) => {
-        cachedDeps[id] = PreviewView.moduleCache.get(id);
-      });
-
-      installRuntimeDeps(this.iframe.contentWindow as any, cachedDeps);
-      return;
-    }
-
-    try {
-      const iframeWindow = this.iframe.contentWindow as any;
-      const iframeDocument = this.iframe.contentDocument;
-      if (!iframeDocument) {
-        throw new Error("Iframe document not available");
-      }
-
-      const script = iframeDocument.createElement("script");
-      script.textContent = bundledCode;
-      iframeDocument.head.appendChild(script);
-
-      const bundleExports = iframeWindow.__REMOTION_DEPS_BUNDLE__;
-      const deps: Record<string, unknown> = {};
-      moduleIds.forEach((id, idx) => {
-        const moduleExport = bundleExports?.[`m${idx}`];
-        if (moduleExport !== undefined) {
-          deps[id] = moduleExport;
-          PreviewView.moduleCache.set(id, moduleExport);
-        } else {
-          console.warn(
-            `[remotion] Module ${id} not found in bundle at index ${idx}. This may happen if the module failed to bundle.`,
-          );
-        }
-      });
-
-      // Inject all dependencies into iframe
-      // The iframe's BundleManager owns the require() implementation.
-      installRuntimeDeps(iframeWindow, deps);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const errorMsg = `Failed to load dependencies: ${message}`;
-      console.error("[remotion]", errorMsg, error);
-      this.showErrorOverlay(errorMsg);
-    }
-  }
-
   private createStaticFileResolver(): FileResolver {
     const app = this.app;
     return (filePath: string) => {
@@ -279,25 +200,19 @@ export class PreviewView extends ItemView implements ScrollDelegate {
     this.iframe.contentWindow.postMessage(cmd, "*");
   }
 
-  public async updateBundleOutput(
-    code: string,
-    moduleIds: string[],
-    bundledDeps: string,
-  ): Promise<void> {
+  public async updateBundleOutput(code: string): Promise<void> {
     if (!this.iframe?.contentWindow) {
       console.warn("[Preview] Cannot update bundle output, iframe not ready");
       return;
     }
 
-    // Pre-inject all dependencies before sending bundle
-    await this.injectDependencies(moduleIds, bundledDeps);
-
-    // Check if injection failed (error overlay would be shown)
-    const runtimeRequire = (this.iframe.contentWindow as any).require;
-    if (typeof runtimeRequire !== "function") {
-      console.warn("[Preview] Dependency injection failed, not sending bundle");
-      return;
-    }
+    // Shim window for vault file access
+    const iframeWindow = this.iframe.contentWindow as any;
+    shimWindow(
+      iframeWindow,
+      this.createStaticFileResolver(),
+      this.app.vault.readBinary.bind(this.app.vault),
+    );
 
     const cmd: IframeCommand = {
       type: "bundle",

@@ -9,12 +9,11 @@ import type esbuild from "esbuild";
 import * as fs from "fs";
 import * as path from "path";
 import { synthesizeMarkdownModule } from "./synthesis";
-import { isVirtualMarkdownFileName, virtualMarkdownToFileName } from "./resolution";
+import { virtualMarkdownToFileName } from "./resolution";
 
 export interface BundleResult {
     code: string;
     error?: Error;
-    bundledModules?: Set<string>;
 }
 
 export interface BundleContext {
@@ -99,38 +98,6 @@ export namespace PluginFactories {
         };
     }
 
-    /**
-     * Create npm package externalization plugin
-     * Marks all npm packages as external (for user code bundling)
-     */
-    export function createExternalizePackagesPlugin(): esbuild.Plugin {
-        const builtins = [
-            "fs",
-            "path",
-            "os",
-            "crypto",
-            "util",
-            "stream",
-            "events",
-        ];
-        return {
-            name: "externalize-packages",
-            setup(build) {
-                build.onResolve({ filter: /.*/ }, (args) => {
-                    const p = args.path;
-                    if (
-                        p.startsWith(".") ||
-                        p.startsWith("/") ||
-                        builtins.includes(p)
-                    ) {
-                        return null;
-                    }
-                    // Mark as external - will be looked up at runtime
-                    return { path: p, external: true };
-                });
-            },
-        };
-    }
 }
 
 /**
@@ -227,7 +194,6 @@ export async function bundleTypeScriptSource(
         return {
             code: "/* esbuild not found */",
             error: new Error("esbuild not available"),
-            bundledModules: new Set<string>(),
         };
     }
 
@@ -253,62 +219,33 @@ export async function bundleTypeScriptSource(
 
         try {
             // Bundle with markdown loader
+            // IIFE format bundles everything together - all dependencies included in the IIFE wrapper
             const result = await esbuildInstance.build({
                 entryPoints: [tempSourcePath],
                 absWorkingDir: context.resolutionDirectory,
                 nodePaths: context.nodeModulesPaths,
                 bundle: true,
                 format: "iife",
+                globalName: "__RemotionBundle__",
                 jsx: "automatic",
                 write: false,
                 logLevel: "error",
-                metafile: true,
                 plugins: [
                     PluginFactories.createMarkdownLoaderPlugin(readMarkdownText),
-                    PluginFactories.createExternalizePackagesPlugin(),
                 ],
             });
 
-            const bundledModules = new Set<string>();
-            if (result.metafile) {
-                // Extract external imports from outputs
-                for (const outputInfo of Object.values(result.metafile.outputs ?? {})) {
-                    for (const importInfo of outputInfo.imports ?? []) {
-                        if (importInfo.external && !importInfo.path.startsWith(".")) {
-                            bundledModules.add(importInfo.path);
-                        }
-                    }
-                }
-
-                // Extract imports from inputs (source files)
-                for (const inputInfo of Object.values(result.metafile.inputs ?? {})) {
-                    for (const importInfo of inputInfo.imports ?? []) {
-                        if (!importInfo.path.startsWith(".")) {
-                            bundledModules.add(importInfo.path);
-                        }
-                    }
-                }
-            }
-
-            // When jsx: "automatic" is used, esbuild automatically injects react/jsx-runtime
-            // but it's not tracked in metafile when react is external.
-            // We need to add it manually if react is in the modules.
-            if (bundledModules.has("react")) {
-                bundledModules.add("react/jsx-runtime");
-            }
-
-            // Filter out markdown imports (these are source files, not runtime deps)
-            for (const mod of Array.from(bundledModules)) {
-                if (mod.endsWith(".md") || mod.endsWith(".mdx")) {
-                    bundledModules.delete(mod);
-                }
-            }
-
             if (result.outputFiles.length > 0) {
                 const bundledCode = new TextDecoder().decode(result.outputFiles[0].contents);
-                return { code: `window.RemotionBundle = ${bundledCode}`, bundledModules };
+                // The IIFE already creates a global with the globalName
+                // Just expose it as RemotionBundle for iframe to access
+                const wrappedCode = `
+                  ${bundledCode}
+                  window.RemotionBundle = __RemotionBundle__;
+                `;
+                return { code: wrappedCode };
             }
-            return { code: "", bundledModules };
+            return { code: "" };
         } finally {
             // Clean up temp file
             try {
@@ -320,81 +257,8 @@ export async function bundleTypeScriptSource(
     } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         console.error("[bundler] esbuild error:", error);
-        return { code: "", error, bundledModules: new Set<string>() };
+        return { code: "", error };
     }
 }
 
-/**
- * Bundle dependencies with inline embedding for runtime injection
- *
- * Creates a global object containing all dependencies accessible by module ID.
- * Used by iframe's require() mock to satisfy dependency imports.
- *
- * @param moduleIds List of module IDs to bundle (e.g., ["react", "@remotion/core"])
- * @param esbuildInstance esbuild instance to use
- * @param context Bundle context with paths
- * @returns Bundle result with bundled dependencies code
- */
-export async function bundleDependenciesBundle(
-    moduleIds: string[],
-    esbuildInstance: typeof esbuild | null,
-    context: BundleContext,
-): Promise<BundleResult> {
-    if (!esbuildInstance) {
-        return {
-            code: "/* esbuild not found */",
-            error: new Error("esbuild not available"),
-            bundledModules: new Set<string>(),
-        };
-    }
 
-    try {
-        const readMarkdownText = (markdownPath: string): string | undefined => {
-            try {
-                return fs.readFileSync(markdownPath, "utf-8");
-            } catch {
-                return undefined;
-            }
-        };
-
-        // Create virtual entry that imports all dependencies
-        // For bundling dependencies, we want to bundle them locally, not externalize
-        const entryCode = moduleIds
-            .map((id, idx) => `import * as m${idx} from '${id}';`)
-            .join("\n") +
-            "\n" +
-            moduleIds.map((id, idx) => `export { m${idx} };`).join("\n");
-
-        const result = await esbuildInstance.build({
-            stdin: {
-                contents: entryCode,
-                loader: "js",
-                resolveDir: context.resolutionDirectory,
-            },
-            absWorkingDir: context.resolutionDirectory,
-            nodePaths: context.nodeModulesPaths,
-            bundle: true,
-            platform: "browser",
-            format: "iife",
-            globalName: "__REMOTION_DEPS_BUNDLE__",
-            write: false,
-            minify: false,
-            logLevel: "error",
-            plugins: [
-                PluginFactories.createMarkdownLoaderPlugin(readMarkdownText),
-                // Note: Do NOT use createExternalizePackagesPlugin here!
-                // We want to bundle the dependencies locally, not externalize them.
-            ],
-        });
-
-        if (result.outputFiles.length > 0) {
-            const code = new TextDecoder().decode(result.outputFiles[0].contents);
-            return { code };
-        }
-        return { code: "" };
-    } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        console.error("[bundler] Failed to bundle dependencies:", error);
-        return { code: "", error, bundledModules: new Set<string>() };
-    }
-}

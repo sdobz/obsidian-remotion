@@ -16,4 +16,3 @@ export const PluginFactories = RemotionMd.PluginFactories;
 // Re-export functions
 export const loadEsbuild = RemotionMd.loadEsbuild;
 export const bundleTypeScriptSource = RemotionMd.bundleTypeScriptSource;
-export const bundleDependenciesBundle = RemotionMd.bundleDependenciesBundle;
