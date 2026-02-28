@@ -7,7 +7,7 @@ import {
 } from "obsidian";
 import path from "path";
 import iframeHtml from "./iframe.html";
-import type { Band, InterpolatorSpec, NullArray } from "../editor/scroll-math";
+import type { Band, InterpolatorSpec, NullArray } from "obsidian-remotion-runtime";
 import { ScrollDelegate, ScrollManager } from "../editor/scroll";
 import { FileResolver, getMimeType, shimWindow } from "./vault-fetch";
 import { installRuntimeDeps } from "./runtime-deps";

@@ -3,8 +3,8 @@
  * Handles scroll events, echo suppression, and bidirectional scroll mapping
  */
 
-import type { InterpolatorSpec } from "../editor/scroll-math";
-import { findInterpolatorRegion, interpolatorFor } from "../editor/scroll-math";
+import type { InterpolatorSpec } from "../shared/scroll-math";
+import { findInterpolatorRegion, interpolatorFor } from "../shared/scroll-math";
 
 const SCROLL_COMMAND_THRESHOLD = 0.5;
 

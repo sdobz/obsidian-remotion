@@ -1,13 +1,13 @@
 import type { EditorView } from "@codemirror/view";
 import type { PreviewSpan } from "remotion-md";
-import type { Band, InterpolatorSpec, NullArray } from "./scroll-math";
+import type { Band, InterpolatorSpec, NullArray } from "obsidian-remotion-runtime";
 import {
   buildInterpolators,
   findInterpolatorRegion,
   hashBands,
   interpolatorFor,
   slipPreviews,
-} from "./scroll-math";
+} from "obsidian-remotion-runtime";
 import { toBand } from "./index";
 
 /**

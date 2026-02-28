@@ -1,5 +1,17 @@
+// Re-export remotion-md-runtime
 export { render } from "remotion-md-runtime";
 export type { RenderComponent, RenderOptions } from "remotion-md-runtime";
+
+// Export shared types and utilities
+export type { IframeCommand, PreviewMessage, PlayerStatus } from "./shared/types";
+export type { Band, InterpolatorSpec, NullArray, Viewport, Interpolator } from "./shared/scroll-math";
+export {
+    findInterpolatorRegion,
+    interpolatorFor,
+    buildInterpolators,
+    slipPreviews,
+    hashBands,
+} from "./shared/scroll-math";
 
 import React from "react";
 import ReactDomClient from "react-dom/client";

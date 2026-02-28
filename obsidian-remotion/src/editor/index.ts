@@ -2,7 +2,7 @@ import type { MarkdownView } from "obsidian";
 import { EditorView, Decoration } from "@codemirror/view";
 import { StateEffect, StateField, type Extension } from "@codemirror/state";
 import type { MarkdownDiagnostic, PreviewSpan } from "remotion-md";
-import type { Band } from "./scroll-math";
+import type { Band } from "obsidian-remotion-runtime";
 import {
   autocompletion,
   type CompletionContext,
