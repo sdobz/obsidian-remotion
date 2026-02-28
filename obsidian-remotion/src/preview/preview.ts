@@ -9,12 +9,20 @@ import path from "path";
 import type { Band, InterpolatorSpec, NullArray } from "obsidian-remotion-runtime";
 import { ScrollDelegate, ScrollManager } from "../editor/scroll";
 import { FileResolver, getMimeType, shimWindow } from "./vault-fetch";
-import { IFrame, type IFrameDelegate } from "./iframe";
+import {
+  Runtime,
+  type RuntimeCommand,
+  type RuntimeDelegate,
+  type RuntimeMessage,
+  type RuntimeWindowLike,
+  type MountedRuntime,
+  createRuntimeCommandHandler,
+} from "./runtime";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
 
-export class PreviewView extends ItemView implements ScrollDelegate, IFrameDelegate {
-  private iframe: IFrame | null = null;
+export class PreviewView extends ItemView implements ScrollDelegate, RuntimeDelegate {
+  private runtime: Runtime | null = null;
   private scrollManager: ScrollManager | null = null;
 
   prepareContainer(container: HTMLElement): void {
@@ -22,11 +30,62 @@ export class PreviewView extends ItemView implements ScrollDelegate, IFrameDeleg
     container.classList.add("remotion-preview-container");
   }
 
-  createIFrameElement(container: HTMLElement): HTMLIFrameElement {
-    const iframe = document.createElement("iframe");
-    iframe.classList.add("remotion-preview-iframe");
-    container.appendChild(iframe);
-    return iframe;
+  private createRuntimeRoot(container: HTMLElement): HTMLElement {
+    const runtimeRoot = document.createElement("div");
+    runtimeRoot.classList.add("remotion-runtime-root");
+    runtimeRoot.style.width = "100%";
+    runtimeRoot.style.height = "100%";
+    runtimeRoot.style.backgroundColor = "#000";
+
+    const bandsScroller = document.createElement("div");
+    bandsScroller.id = "bands-scroller";
+    const bandsContainer = document.createElement("div");
+    bandsContainer.id = "bands-container";
+    bandsScroller.appendChild(bandsContainer);
+
+    const linkOverlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    linkOverlay.id = "link-overlay";
+
+    const playersScroller = document.createElement("div");
+    playersScroller.id = "players-scroller";
+    const playersContainer = document.createElement("div");
+    playersContainer.id = "players-container";
+    playersScroller.appendChild(playersContainer);
+
+    runtimeRoot.appendChild(bandsScroller);
+    runtimeRoot.appendChild(linkOverlay);
+    runtimeRoot.appendChild(playersScroller);
+    container.appendChild(runtimeRoot);
+
+    return runtimeRoot;
+  }
+
+  async mountRuntime(
+    container: HTMLElement,
+    onMessage: (message: RuntimeMessage) => void,
+  ): Promise<MountedRuntime> {
+    this.createRuntimeRoot(container);
+
+    const runtimeWindow = Object.create(window) as RuntimeWindowLike;
+    runtimeWindow.parent = {
+      postMessage: (message: RuntimeMessage) => {
+        onMessage(message);
+      },
+    };
+
+    const postCommand = createRuntimeCommandHandler(runtimeWindow, onMessage);
+
+    onMessage({ type: "runtime-ready" });
+
+    return {
+      postCommand: (command: RuntimeCommand) => {
+        postCommand(command);
+      },
+      getContentWindow: () => window,
+      unmount: async () => {
+        container.innerHTML = "";
+      },
+    };
   }
 
   constructor(leaf: WorkspaceLeaf) {
@@ -45,42 +104,31 @@ export class PreviewView extends ItemView implements ScrollDelegate, IFrameDeleg
   async onOpen() {
     const container = this.containerEl.children[1] as HTMLElement;
 
-    // Initialize iframe with this view as delegate
-    this.iframe = new IFrame(this);
-    await this.iframe.mount(container);
+    this.runtime = new Runtime(this);
+    this.runtime.setHandlers({
+      onRuntimeError: (message: string, stack: string) => {
+        console.error("Remotion runtime error:", message, stack);
+      },
+      onPlayerStatus: (heights: number[]) => {
+        this.scrollManager?.handlePlayerHeights(heights);
+      },
+      onPlayerScroll: (scrollTop: number) => {
+        this.scrollManager?.handlePlayerScroll(scrollTop);
+      },
+    });
+    await this.runtime.mount(container);
   }
 
   async onClose() {
-    if (this.iframe) {
-      await this.iframe.unmount();
-      this.iframe = null;
+    if (this.runtime) {
+      await this.runtime.unmount();
+      this.runtime = null;
     }
     this.scrollManager = null;
   }
 
   public setScrollManager(scrollManager: ScrollManager | null): void {
     this.scrollManager = scrollManager;
-  }
-
-  /**
-   * IFrameDelegate: Handle runtime error from iframe
-   */
-  onIFrameRuntimeError(message: string, stack: string): void {
-    console.error("Remotion runtime error:", message, stack);
-  }
-
-  /**
-   * IFrameDelegate: Handle player heights from iframe
-   */
-  onIFramePlayerStatus(heights: number[]): void {
-    this.scrollManager?.handlePlayerHeights(heights);
-  }
-
-  /**
-   * IFrameDelegate: Handle player scroll from iframe
-   */
-  onIFramePlayerScroll(scrollTop: number): void {
-    this.scrollManager?.handlePlayerScroll(scrollTop);
   }
 
   onReflow(
@@ -90,7 +138,7 @@ export class PreviewView extends ItemView implements ScrollDelegate, IFrameDeleg
     players: NullArray<Band>,
     interpolatorSpecs: InterpolatorSpec[],
   ): void {
-    this.iframe?.reflow(
+    this.runtime?.reflow(
       bandScrollHeight,
       bands,
       playerScrollHeight,
@@ -100,7 +148,7 @@ export class PreviewView extends ItemView implements ScrollDelegate, IFrameDeleg
   }
 
   onScroll(editorScrollTop: number): void {
-    this.iframe?.scroll(editorScrollTop);
+    this.runtime?.scroll(editorScrollTop);
   }
 
   private createStaticFileResolver(): FileResolver {
@@ -136,34 +184,33 @@ export class PreviewView extends ItemView implements ScrollDelegate, IFrameDeleg
   }
 
   public resetForNewFile(): void {
-    this.iframe?.reset();
+    this.runtime?.reset();
   }
 
   public async updateBundleOutput(code: string): Promise<void> {
-    if (!this.iframe) {
-      console.warn("[Preview] Cannot update bundle output, iframe not ready");
+    if (!this.runtime) {
+      console.warn("[Preview] Cannot update bundle output, runtime not ready");
       return;
     }
 
     // Shim window for vault file access (Obsidian concern)
-    const iframeWindow = this.iframe.getContentWindow();
-    if (iframeWindow) {
+    const runtimeWindow = this.runtime.getContentWindow();
+    if (runtimeWindow) {
       shimWindow(
-        iframeWindow as any,
+        runtimeWindow as any,
         this.createStaticFileResolver(),
         this.app.vault.readBinary.bind(this.app.vault),
       );
     }
 
-    // Send bundle to iframe (pure messaging)
-    this.iframe.updateBundle(code);
+    this.runtime.updateBundle(code);
   }
 
   public showErrorOverlay(message: string, stack?: string): void {
-    this.iframe?.showError(message, stack);
+    this.runtime?.showError(message, stack);
   }
 
   public clearErrorOverlay(): void {
-    this.iframe?.clearError();
+    this.runtime?.clearError();
   }
 }
