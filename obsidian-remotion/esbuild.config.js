@@ -8,29 +8,7 @@ const htmlPlugin = {
   name: "html-loader",
   setup(build) {
     build.onLoad({ filter: /\.html$/ }, async (args) => {
-      let html = await fs.promises.readFile(args.path, "utf-8");
-
-      // Build iframe/main.ts from runtime package and inline its output into the HTML
-      const iframeResult = await esbuild.build({
-        entryPoints: ["runtime/src/iframe/main.ts"],
-        bundle: true,
-        platform: "browser",
-        format: "iife",
-        write: false,
-        minify: isProduction,
-        sourcemap: false,
-      });
-
-      if (iframeResult.outputFiles && iframeResult.outputFiles.length > 0) {
-        const iframeScript = iframeResult.outputFiles[0].text;
-
-        // Replace the script tag placeholder with the actual iframe code
-        html = html.replace(
-          "<script>__IFRAME_SCRIPT__</script>",
-          `<script>${iframeScript}</script>`,
-        );
-      }
-
+      const html = await fs.promises.readFile(args.path, "utf-8");
       return {
         contents: `export default ${JSON.stringify(html)};`,
         loader: "js",

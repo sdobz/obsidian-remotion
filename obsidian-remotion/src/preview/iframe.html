@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="utf-8">
     <style>
         * {
             box-sizing: border-box;
         }
-        html, body { 
-            margin: 0; 
+
+        html,
+        body {
+            margin: 0;
             padding: 0;
             width: 100%;
             height: 100%;
@@ -16,7 +19,7 @@
             background: #1a1a1a;
             color: #fff;
         }
-        
+
         /* Main container with two scrolling regions */
         .scroller {
             position: absolute;
@@ -49,12 +52,12 @@
             width: 100%;
         }
 
-        #players-container > div {
+        #players-container>div {
             border-radius: 4px;
             opacity: 0;
         }
 
-        #players-container > div > .player-wrapper {
+        #players-container>div>.player-wrapper {
             width: 100%;
             background-color: #1a1a1a;
             /* Checkerboard transparency pattern */
@@ -82,19 +85,28 @@
             background: #1a1a1a;
             z-index: 5000;
         }
+
         #loading-screen.hidden {
             display: none;
         }
+
         .loading-spinner {
             font-size: 64px;
             animation: spin 1.5s linear infinite;
         }
+
         @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
+
 <body>
     <div id="loading-screen">
         <div class="loading-spinner">⏳</div>
@@ -106,6 +118,38 @@
     <div class="scroller" id="players-scroller">
         <div class="scrollee" id="players-container"></div>
     </div>
-    <script>__IFRAME_SCRIPT__</script>
+    <script>
+        // Signal that the iframe is ready to receive bundles
+        window.parent.postMessage({ type: "iframe-ready" }, "*");
+
+        // Listen for bundle and other commands from the parent
+        window.addEventListener("message", (event) => {
+            const cmd = event.data;
+            if (!cmd) return;
+
+            if (cmd.type === "bundle") {
+                // Execute the bundle code
+                try {
+                    new Function(cmd.payload)();
+                    // If RemotionBundle is defined, notify parent of initial state
+                    if (window.RemotionBundle) {
+                        window.parent.postMessage({
+                            type: "player-status",
+                            players: []
+                        }, "*");
+                    }
+                } catch (error) {
+                    window.parent.postMessage({
+                        type: "runtime-error",
+                        error: {
+                            message: error.message,
+                            stack: error.stack
+                        }
+                    }, "*");
+                }
+            }
+        });
+    </script>
 </body>
+
 </html>
