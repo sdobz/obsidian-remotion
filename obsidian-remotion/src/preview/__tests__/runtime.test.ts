@@ -4,7 +4,7 @@
 
 import {
     Runtime,
-    createRuntimeCommandHandler,
+    executeBundleString,
     type RuntimeCommand,
     type RuntimeDelegate,
     type RuntimeMessage,
@@ -24,24 +24,27 @@ function createJsdomRuntimeDelegate() {
             runtimeRoot.className = "runtime-root";
             container.appendChild(runtimeRoot);
 
-            const runtimeWindow = Object.create(window) as RuntimeWindowLike;
-            runtimeWindow.parent = {
-                postMessage(message: RuntimeMessage) {
-                    onMessage(message);
+            const runtimeWindow: RuntimeWindowLike = {
+                parent: {
+                    postMessage(message: RuntimeMessage) {
+                        onMessage(message);
+                    },
                 },
             };
-
-            const postCommandImpl = createRuntimeCommandHandler(runtimeWindow, onMessage);
 
             onMessage({ type: "runtime-ready" });
 
             return {
                 postCommand(command: RuntimeCommand) {
                     commandLog.push(command);
-                    postCommandImpl(command);
+                    if (command.type === "bundle") {
+                        executeBundleString(runtimeWindow, command.payload);
+                    } else if (command.type === "scroll") {
+                        onMessage({ type: "player-scroll", playerScrollTop: command.editorScrollTop });
+                    }
                 },
                 getContentWindow() {
-                    return runtimeWindow as unknown as Window;
+                    return null;
                 },
                 async unmount() {
                     container.innerHTML = "";

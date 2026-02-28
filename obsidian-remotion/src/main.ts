@@ -15,18 +15,23 @@ import {
   createAutocompleteExtension,
   createHoverExtension,
 } from "./editor/index";
-import { CompilationManager } from "./toolchain/compilation";
+import { TypecheckManager } from "./toolchain/compilation";
 import { ScrollManager } from "./editor/scroll";
+import { BundlePipeline, loadEsbuild, ResolutionContext } from "remotion-md";
+import path from "path";
 
 export default class RemotionPlugin extends Plugin {
   public settings!: PluginSettings;
-  private compilationManager!: CompilationManager;
+  private typecheckManager!: TypecheckManager;
+  private bundlePipeline!: BundlePipeline;
+  private esbuildInstance: any = null;
   private scrollManager: ScrollManager | null = null;
   private viewManager!: ViewManager;
   private statusBar!: StatusBarManager;
   private lastActiveMarkdownView: MarkdownView | null = null;
   private lastActiveFilePath: string | null = null;
   private lastPreviewView: PreviewView | null = null;
+  private vaultRoot: string = "";
 
   async onload() {
     await this.loadSettings();
@@ -38,8 +43,13 @@ export default class RemotionPlugin extends Plugin {
 
     // Initialize managers
     const vaultRoot = getVaultRootPath(this.app);
+    this.vaultRoot = vaultRoot ?? "";
     if (vaultRoot) {
-      this.compilationManager = new CompilationManager(vaultRoot);
+      this.typecheckManager = new TypecheckManager(vaultRoot);
+      this.bundlePipeline = new BundlePipeline();
+      this.esbuildInstance = loadEsbuild(
+        ResolutionContext.forVaultRoot(vaultRoot),
+      );
 
       // Register Language Service extensions
       this.registerLanguageFeatures();
@@ -92,7 +102,7 @@ export default class RemotionPlugin extends Plugin {
       const activeView = this.viewManager.getActiveMarkdownView();
       if (!activeView) return [];
 
-      return await this.compilationManager.getCompletionsAtPosition(
+      return await this.typecheckManager.getCompletionsAtPosition(
         activeView,
         pos,
         prefix,
@@ -105,7 +115,7 @@ export default class RemotionPlugin extends Plugin {
         const activeView = this.viewManager.getActiveMarkdownView();
         if (!activeView) return null;
 
-        return await this.compilationManager.getQuickInfoAtPosition(
+        return await this.typecheckManager.getQuickInfoAtPosition(
           activeView,
           pos,
         );
@@ -170,10 +180,10 @@ export default class RemotionPlugin extends Plugin {
   }
 
   private schedulePreviewUpdate(): void {
-    if (!this.compilationManager || !this.viewManager.getVisiblePreviewView())
+    if (!this.typecheckManager || !this.viewManager.getVisiblePreviewView())
       return;
 
-    this.compilationManager.scheduleUpdate(async () => {
+    this.typecheckManager.scheduleUpdate(async () => {
       await this.updatePreview();
     });
   }
@@ -186,10 +196,19 @@ export default class RemotionPlugin extends Plugin {
     this.statusBar.updateTypecheck({ status: "loading" });
     this.statusBar.updateBundle({ status: "loading" });
 
-    const version = this.compilationManager.getCurrentVersion();
-    const result = await this.compilationManager.compile(activeView, version);
+    const version = this.typecheckManager.getCurrentVersion();
+    const markdown = activeView.editor.getValue();
+    const notePath = activeView.file?.path;
 
-    if (!result) {
+    if (!notePath) return;
+
+    // Run typecheck and bundling in parallel
+    const [typecheckResult, bundleResult] = await Promise.all([
+      this.typecheckManager.typecheck(markdown, notePath, version),
+      this.bundle(markdown, notePath),
+    ]);
+
+    if (!typecheckResult) {
       // Clear diagnostics and update status on failure
       const cm = getEditorView(activeView);
       if (cm) clearEditorDiagnostics(cm);
@@ -198,27 +217,72 @@ export default class RemotionPlugin extends Plugin {
       return;
     }
 
-    // Update UI with compilation status
-    this.statusBar.updateTypecheck(result.typecheckStatus);
-    this.statusBar.updateBundle(result.bundleStatus);
+    // Update UI with typecheck status
+    this.statusBar.updateTypecheck(typecheckResult.typecheckStatus);
+    this.statusBar.updateBundle(bundleResult?.bundleStatus ?? { status: "error" });
 
     // Apply diagnostics to editor (wiring layer responsibility)
     const cm = getEditorView(activeView);
     if (cm) {
-      if (result.diagnostics.length > 0) {
-        applyEditorDiagnostics(cm, result.diagnostics);
+      if (typecheckResult.diagnostics.length > 0) {
+        applyEditorDiagnostics(cm, typecheckResult.diagnostics);
       } else {
         clearEditorDiagnostics(cm);
       }
     }
 
-    await previewView.updateBundleOutput(result.bundleCode);
-    this.scrollManager?.handlePreviewSpans(result.previewLocations);
+    // Update preview with bundle code
+    if (bundleResult) {
+      await previewView.updateBundleOutput(bundleResult.bundleCode);
+      this.scrollManager?.handlePreviewSpans(typecheckResult.previewLocations);
 
-    if (result.bundleStatus.status === "error" && result.bundleStatus.error) {
-      previewView.showErrorOverlay(result.bundleStatus.error);
-    } else {
-      previewView.clearErrorOverlay();
+      if (bundleResult.bundleStatus.status === "error" && bundleResult.bundleStatus.error) {
+        previewView.showErrorOverlay(bundleResult.bundleStatus.error);
+      } else {
+        previewView.clearErrorOverlay();
+      }
+    }
+  }
+
+  /**
+   * Bundle markdown code.
+   * Orchestrates the bundling pipeline (now independent of typecheck).
+   */
+  private async bundle(
+    markdown: string,
+    notePath: string,
+  ): Promise<{
+    bundleCode: string;
+    bundleStatus: { status: "ok" | "error"; error?: string };
+  } | null> {
+    try {
+      const absoluteNotePath = path.join(this.vaultRoot, notePath);
+      const resolutionContext = new ResolutionContext(
+        this.vaultRoot,
+        absoluteNotePath,
+      );
+
+      const result = await this.bundlePipeline.process({
+        markdown,
+        notePath,
+        absoluteNotePath,
+        resolutionContext,
+        esbuildInstance: this.esbuildInstance,
+      });
+
+      return {
+        bundleCode: result.bundleCode,
+        bundleStatus: result.bundleStatus,
+      };
+    } catch (err) {
+      console.error("[remotion] Bundling failed:", err);
+      return {
+        bundleCode: "/* Bundling error */",
+        bundleStatus: {
+          status: "error",
+          error: err instanceof Error ? err.message : String(err),
+        },
+      };
     }
   }
 

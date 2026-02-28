@@ -103,23 +103,6 @@ export function executeBundleString(
     return emitted;
 }
 
-export function createRuntimeCommandHandler(
-    runtimeWindow: RuntimeWindowLike,
-    emit: (message: RuntimeMessage) => void,
-): (command: RuntimeCommand) => void {
-    runtimeWindow.parent.postMessage = (message: RuntimeMessage) => {
-        emit(message);
-    };
-
-    return (command: RuntimeCommand) => {
-        if (command.type === "bundle") {
-            executeBundleString(runtimeWindow, command.payload);
-        } else if (command.type === "scroll") {
-            emit({ type: "player-scroll", playerScrollTop: command.editorScrollTop });
-        }
-    };
-}
-
 export class Runtime {
     private delegate: RuntimeDelegate;
     private mountedRuntime: MountedRuntime | null = null;

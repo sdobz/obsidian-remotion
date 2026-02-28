@@ -4,7 +4,7 @@
  * Tests that module resolution paths are calculated consistently
  * and that context creation handles various directory structures.
  */
-import { ResolutionContext } from "../resolution-context";
+import { ResolutionContext } from "remotion-md";
 import fs from "fs";
 import os from "os";
 import path from "path";

@@ -14,9 +14,7 @@ import {
   type RuntimeCommand,
   type RuntimeDelegate,
   type RuntimeMessage,
-  type RuntimeWindowLike,
   type MountedRuntime,
-  createRuntimeCommandHandler,
 } from "./runtime";
 
 export const PREVIEW_VIEW_TYPE = "remotion-preview-view";
@@ -25,64 +23,101 @@ export class PreviewView extends ItemView implements ScrollDelegate, RuntimeDele
   private runtime: Runtime | null = null;
   private scrollManager: ScrollManager | null = null;
 
+  private createRuntimeIFrame(container: HTMLElement): HTMLIFrameElement {
+    const iframe = document.createElement("iframe");
+    iframe.classList.add("remotion-runtime-iframe");
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.border = "0";
+    iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
+    iframe.srcdoc = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+      #bands-scroller { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+      #players-scroller { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+      #link-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="bands-scroller"><div id="bands-container"></div></div>
+    <svg id="link-overlay"></svg>
+    <div id="players-scroller"><div id="players-container"></div></div>
+    <script>
+      (() => {
+        const emit = (message) => window.parent.postMessage(message, "*");
+        const executeBundle = (payload) => {
+          try {
+            const fn = new Function("window", payload);
+            fn(window);
+            if (window.RemotionBundle) {
+              emit({ type: "player-status", players: [] });
+            }
+          } catch (error) {
+            emit({
+              type: "runtime-error",
+              error: {
+                message: error?.message ?? "Unknown runtime error",
+                stack: error?.stack ?? "",
+              },
+            });
+          }
+        };
+
+        window.addEventListener("message", (event) => {
+          const command = event.data;
+          if (!command || typeof command !== "object") return;
+
+          if (command.type === "bundle") {
+            executeBundle(command.payload);
+            return;
+          }
+
+          if (command.type === "scroll") {
+            emit({ type: "player-scroll", playerScrollTop: command.editorScrollTop });
+          }
+        });
+
+        emit({ type: "runtime-ready" });
+      })();
+    </script>
+  </body>
+</html>`;
+
+    container.appendChild(iframe);
+    return iframe;
+  }
+
   prepareContainer(container: HTMLElement): void {
     container.innerHTML = "";
     container.classList.add("remotion-preview-container");
-  }
-
-  private createRuntimeRoot(container: HTMLElement): HTMLElement {
-    const runtimeRoot = document.createElement("div");
-    runtimeRoot.classList.add("remotion-runtime-root");
-    runtimeRoot.style.width = "100%";
-    runtimeRoot.style.height = "100%";
-    runtimeRoot.style.backgroundColor = "#000";
-
-    const bandsScroller = document.createElement("div");
-    bandsScroller.id = "bands-scroller";
-    const bandsContainer = document.createElement("div");
-    bandsContainer.id = "bands-container";
-    bandsScroller.appendChild(bandsContainer);
-
-    const linkOverlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    linkOverlay.id = "link-overlay";
-
-    const playersScroller = document.createElement("div");
-    playersScroller.id = "players-scroller";
-    const playersContainer = document.createElement("div");
-    playersContainer.id = "players-container";
-    playersScroller.appendChild(playersContainer);
-
-    runtimeRoot.appendChild(bandsScroller);
-    runtimeRoot.appendChild(linkOverlay);
-    runtimeRoot.appendChild(playersScroller);
-    container.appendChild(runtimeRoot);
-
-    return runtimeRoot;
   }
 
   async mountRuntime(
     container: HTMLElement,
     onMessage: (message: RuntimeMessage) => void,
   ): Promise<MountedRuntime> {
-    this.createRuntimeRoot(container);
+    const iframe = this.createRuntimeIFrame(container);
 
-    const runtimeWindow = Object.create(window) as RuntimeWindowLike;
-    runtimeWindow.parent = {
-      postMessage: (message: RuntimeMessage) => {
-        onMessage(message);
-      },
+    const handleMessage = (event: MessageEvent) => {
+      if (event.source !== iframe.contentWindow) return;
+      const data = event.data as RuntimeMessage;
+      if (!data || typeof data !== "object" || !("type" in data)) return;
+      onMessage(data);
     };
 
-    const postCommand = createRuntimeCommandHandler(runtimeWindow, onMessage);
-
-    onMessage({ type: "runtime-ready" });
+    window.addEventListener("message", handleMessage);
 
     return {
       postCommand: (command: RuntimeCommand) => {
-        postCommand(command);
+        iframe.contentWindow?.postMessage(command, "*");
       },
-      getContentWindow: () => window,
+      getContentWindow: () => iframe.contentWindow,
       unmount: async () => {
+        window.removeEventListener("message", handleMessage);
+        iframe.remove();
         container.innerHTML = "";
       },
     };

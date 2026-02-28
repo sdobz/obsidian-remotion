@@ -1,42 +1,43 @@
-import { MarkdownView } from "obsidian";
 import {
   extractCodeBlocks,
   classifyBlocks,
   synthesizeVirtualModule,
   mapDiagnosticsToMarkdown,
-  parseBundleError,
+  ResolutionContext,
   type ClassifiedBlock,
   type MarkdownDiagnostic,
   type PreviewSpan,
 } from "remotion-md";
 import path from "path";
-import type esbuild from "esbuild";
 import ts from "typescript";
+import { MarkdownView } from "obsidian";
 import {
   createLanguageService,
   getPreviewCallLocations,
   mapPreviewLocationsToMarkdown,
   LanguageServiceQueries,
 } from "./ts";
-import {
-  loadEsbuild,
-  bundleTypeScriptSource,
-} from "./bundler";
-import { ResolutionContext } from "./resolution-context";
 
-export interface CompilationResult {
+/**
+ * TypecheckResult - output of type checking only.
+ * Bundling is no longer a responsibility of this manager.
+ */
+export interface TypecheckResult {
   previewLocations: PreviewSpan[];
-  bundleCode: string;
   typecheckStatus: { status: "ok" | "error"; errorCount: number };
-  bundleStatus: { status: "ok" | "error"; error?: string };
   diagnostics: MarkdownDiagnostic[];
+  synthesizedCode: string;
+  classified: ClassifiedBlock[];
 }
 
-export class CompilationManager {
+/**
+ * TypecheckManager - handles TypeScript diagnostics only.
+ * Bundling is delegated to a separate BundlePipeline (in main.ts wiring layer).
+ */
+export class TypecheckManager {
   private updateTimeoutId: number | null = null;
   private updateVersion = 0;
   private lastExtractedBlocks: ClassifiedBlock[] = [];
-  private esbuildInstance: typeof esbuild | null = null;
   private languageService: ts.LanguageService | null = null;
   private languageServiceHost: ts.LanguageServiceHost | null = null;
   private documentVersions = new Map<string, number>();
@@ -48,7 +49,6 @@ export class CompilationManager {
 
   constructor(private vaultRoot: string) {
     this.resolutionContext = ResolutionContext.forVaultRoot(vaultRoot);
-    this.esbuildInstance = loadEsbuild(this.resolutionContext);
   }
 
   scheduleUpdate(callback: () => Promise<void>, delay = 300): void {
@@ -61,18 +61,21 @@ export class CompilationManager {
     }, delay);
   }
 
-  async compile(
-    activeView: MarkdownView,
+  /**
+   * Typecheck markdown code.
+   * Generic method: accepts markdown text and path directly (not Obsidian-specific).
+   * Bundling is handled separately by BundlePipeline in main.ts.
+   */
+  async typecheck(
+    markdown: string,
+    notePath: string,
     version: number,
-  ): Promise<CompilationResult | null> {
-    if (!activeView.file) return null;
-
+  ): Promise<TypecheckResult | null> {
     const startTime = performance.now();
     let classified: ClassifiedBlock[];
-    const markdownText = activeView.editor.getValue();
 
     try {
-      const blocks = extractCodeBlocks(markdownText);
+      const blocks = extractCodeBlocks(markdown);
       classified = classifyBlocks(blocks);
       if (classified.length > 0) this.lastExtractedBlocks = classified;
     } catch (err) {
@@ -81,7 +84,6 @@ export class CompilationManager {
       if (classified.length === 0) return null;
     }
 
-    const notePath = activeView.file.path;
     let synthesized: ReturnType<typeof synthesizeVirtualModule>;
     try {
       synthesized = synthesizeVirtualModule(notePath, classified);
@@ -104,20 +106,10 @@ export class CompilationManager {
       synthesized.code,
       this.resolutionContext,
       absoluteNotePath,
-      markdownText,
+      markdown,
     );
 
     const tsStart = performance.now();
-    const bundleResult = await bundleTypeScriptSource(
-      synthesized.code,
-      virtualFileName,
-      this.esbuildInstance,
-      this.resolutionContext,
-      absoluteNotePath,
-      markdownText,
-    );
-    const tsEnd = performance.now();
-
     if (version !== this.updateVersion) return null;
 
     // Get diagnostics directly from language service
@@ -128,7 +120,7 @@ export class CompilationManager {
     const diagnostics = [...syntacticDiagnostics, ...semanticDiagnostics];
 
     // Map diagnostics to markdown positions
-    let markdownDiagnostics = mapDiagnosticsToMarkdown(
+    const markdownDiagnostics = mapDiagnosticsToMarkdown(
       diagnostics,
       synthesized.code,
       classified,
@@ -139,16 +131,6 @@ export class CompilationManager {
       (d) => d.category === "error",
     ).length;
 
-    // Handle bundle errors
-    if (bundleResult.error) {
-      const bundleError_mapped = parseBundleError(
-        bundleResult.error,
-        classified,
-      );
-      if (bundleError_mapped)
-        markdownDiagnostics = [...markdownDiagnostics, bundleError_mapped];
-    }
-
     // Get preview call locations from AST and map to markdown
     const previewLocationsRaw = getPreviewCallLocations(
       this.languageService,
@@ -157,31 +139,20 @@ export class CompilationManager {
     const previewLocations = mapPreviewLocationsToMarkdown(
       previewLocationsRaw,
       synthesized.code,
-      activeView.editor.getValue(),
+      markdown,
     );
 
+    const tsEnd = performance.now();
     const endTime = performance.now();
     console.log(
-      `[remotion] Parallel execution: ${(tsEnd - tsStart).toFixed(1)}ms | Total: ${(endTime - startTime).toFixed(1)}ms | Reload: ${(endTime - tsEnd).toFixed(1)}ms`,
+      `[remotion] Typecheck: ${(tsEnd - tsStart).toFixed(1)}ms | Total: ${(endTime - startTime).toFixed(1)}ms`,
     );
-
-    const bundleError = bundleResult.error
-      ? bundleResult.error instanceof Error
-        ? bundleResult.error.message
-        : String(bundleResult.error)
-      : undefined;
-
-    const bundleCode =
-      bundleResult.code || "/* Bundle failed - see diagnostics */";
 
     return {
       previewLocations,
-      bundleCode,
+      synthesizedCode: synthesized.code,
+      classified,
       typecheckStatus: { status: errorCount > 0 ? "error" : "ok", errorCount },
-      bundleStatus: {
-        status: bundleError ? "error" : "ok",
-        error: bundleError,
-      },
       diagnostics: markdownDiagnostics,
     };
   }
@@ -267,3 +238,6 @@ export class CompilationManager {
   }
 
 }
+
+// Backward compatibility alias (will be renamed to TypecheckManager)
+export type CompilationManager = TypecheckManager;

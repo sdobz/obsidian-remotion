@@ -6,4 +6,6 @@ export * from "./previewLocations";
 export * from "./resolution";
 export * from "./test-harness";
 export * from "./bundler";
+export * from "./pipeline";
+export * from "./resolutionContext";
 export type { PreviewSpan } from "./previewLocations";
