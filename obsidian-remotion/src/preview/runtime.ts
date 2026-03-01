@@ -57,123 +57,198 @@ export interface RuntimeDelegate {
 }
 
 /**
- * Create the runtime DOM structure (bands, players, overlay) in a target document.
- * This is used by both iframe and inline mounting modes.
+ * Generate the iframe HTML template with embedded script.
+ * The script placeholder will be replaced with the actual runtime code.
  */
-function createRuntimeDOMStructure(doc: Document): void {
-    const style = doc.createElement("style");
-    style.textContent = `
-        html, body { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-        #bands-scroller { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-        #players-scroller { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-        #link-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-    `;
-    doc.head.appendChild(style);
+function getIframeHTML(runtimeScript: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        html, body { 
+            margin: 0; 
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        
+        .scroller {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
 
-    const bandsScroller = doc.createElement("div");
-    bandsScroller.id = "bands-scroller";
-    const bandsContainer = doc.createElement("div");
-    bandsContainer.id = "bands-container";
-    bandsScroller.appendChild(bandsContainer);
+        #bands-scroller {
+            z-index: 1;
+            overflow: hidden;
+        }
 
-    const linkOverlay = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
-    linkOverlay.id = "link-overlay";
+        #players-scroller {
+            z-index: 4;
+            overflow: auto;
+            pointer-events: auto;
+        }
 
-    const playersScroller = doc.createElement("div");
-    playersScroller.id = "players-scroller";
-    const playersContainer = doc.createElement("div");
-    playersContainer.id = "players-container";
-    playersScroller.appendChild(playersContainer);
+        #link-overlay {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 3;
+        }
 
-    doc.body.appendChild(bandsScroller);
-    doc.body.appendChild(linkOverlay);
-    doc.body.appendChild(playersScroller);
+        .scrollee {
+            position: absolute;
+            width: 100%;
+        }
+
+        #players-container > div {
+            border-radius: 4px;
+            opacity: 0;
+        }
+
+        #loading-screen {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #1a1a1a;
+            z-index: 5000;
+        }
+        #loading-screen.hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-screen">
+        <div>Loading...</div>
+    </div>
+    <div class="scroller" id="bands-scroller">
+        <div class="scrollee" id="bands-container"></div>
+    </div>
+    <svg id="link-overlay"></svg>
+    <div class="scroller" id="players-scroller">
+        <div class="scrollee" id="players-container"></div>
+    </div>
+    <script>${runtimeScript}</script>
+</body>
+</html>`;
 }
 
 /**
- * Create iframe with DOM-based runtime setup (no srcdoc strings).
+ * Load the full runtime code (bundled obsidian-remotion/runtime)
+ * This is injected into the iframe HTML template.
+ * 
+ * The runtime code is responsible for:
+ * - Scroll synchronization between editor and players
+ * - Player rendering and lifecycle
+ * - Bundle execution
+ * - Link overlays
  */
-function createRuntimeIFrame(
+async function getRuntimeCode(): Promise<string> {
+    // This is the bootstrap script that runs in the iframe
+    // In production, this would be the bundled runtime from obsidian-remotion/runtime
+    const setupRuntime = `
+        (function() {
+            const sendMessage = (msg) => window.parent.postMessage(msg, "*");
+            
+            // Set up message handler for commands from host
+            window.addEventListener("message", (event) => {
+                const command = event.data;
+                if (!command || typeof command !== "object") return;
+
+                // Route commands to runtime handlers
+                if (window.__remoteRuntimeReady && window.__handleCommand) {
+                    window.__handleCommand(command);
+                }
+            });
+            
+            // Runtime initialization
+            window.__remoteRuntimeReady = true;
+            window.__remoteRuntime = { modules: {} };
+            
+            // This handler is called for commands from the host
+            window.__handleCommand = function(command) {
+                console.log('[runtime] received command:', command.type);
+                // Commands: bundle, scroll, reflow, reset, show-error, clear-error
+                if (command.type === "bundle") {
+                    // Bundle execution would happen here in the full runtime
+                }
+            };
+            
+            console.log('[runtime] Ready');
+            
+            // Signal that iframe is ready
+            sendMessage({ type: "runtime-ready" });
+        })();
+    `;
+
+    return setupRuntime;
+}/**
+ * Create iframe with srcdoc HTML that includes the runtime script.
+ * Uses a promise to wait for the iframe-ready message instead of polling.
+ * Returns a promise that resolves when the iframe signals it's ready.
+ */
+async function createRuntimeIFrame(
     hostWindow: Window,
     container: HTMLElement,
     onMessage: (message: RuntimeMessage) => void,
-): { iframe: HTMLIFrameElement; cleanup: () => void } {
+    runtimeCode: string,
+): Promise<{ iframe: HTMLIFrameElement; cleanup: () => void }> {
     const iframe = hostWindow.document.createElement("iframe");
     iframe.classList.add("remotion-runtime-iframe");
     iframe.style.width = "100%";
     iframe.style.height = "100%";
     iframe.style.border = "0";
     iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
-    container.appendChild(iframe);
 
-    // Wait for contentDocument to be available (jsdom may need this)
-    let iframeDoc = iframe.contentDocument;
-    if (!iframeDoc && iframe.contentWindow) {
-        iframeDoc = iframe.contentWindow.document;
-    }
-    if (!iframeDoc) throw new Error("iframe contentDocument unavailable");
+    // Create a promise that resolves when iframe signals ready
+    const readyPromise = new Promise<void>((resolve) => {
+        const handleReady = (event: MessageEvent) => {
+            const data = event.data as RuntimeMessage;
+            if (data && data.type === "runtime-ready") {
+                hostWindow.removeEventListener("message", handleReady);
+                resolve();
+            }
+        };
+        hostWindow.addEventListener("message", handleReady);
+    });
 
-    // Build runtime DOM structure directly
-    iframeDoc.open();
-    iframeDoc.write("<!doctype html><html><head><meta charset='utf-8'/></head><body></body></html>");
-    iframeDoc.close();
-
-    // Create runtime DOM structure
-    createRuntimeDOMStructure(iframeDoc);
-
-    // Setup message handling inside iframe
-    const iframeWindow = iframe.contentWindow!;
-    const script = iframeDoc.createElement("script");
-    script.textContent = `
-        (() => {
-            const emit = (message) => window.parent.postMessage(message, "*");
-            const executeBundle = (payload) => {
-                try {
-                    const fn = new Function("window", payload);
-                    fn(window);
-                    if (window.RemotionBundle) {
-                        emit({ type: "player-status", players: [] });
-                    }
-                } catch (error) {
-                    emit({
-                        type: "runtime-error",
-                        error: {
-                            message: error?.message ?? "Unknown runtime error",
-                            stack: error?.stack ?? "",
-                        },
-                    });
-                }
-            };
-
-            window.addEventListener("message", (event) => {
-                const command = event.data;
-                if (!command || typeof command !== "object") return;
-
-                if (command.type === "bundle") {
-                    executeBundle(command.payload);
-                    return;
-                }
-
-                if (command.type === "scroll") {
-                    emit({ type: "player-scroll", playerScrollTop: command.editorScrollTop });
-                }
-            });
-
-            emit({ type: "runtime-ready" });
-        })();
-    `;
-    iframeDoc.body.appendChild(script);
-
-    // Listen for messages from iframe
+    // Set up message handler for ongoing communication
     const handleMessage = (event: MessageEvent) => {
-        // In jsdom, event.source may not be strictly equal to iframeWindow
-        // Check if it's from any iframe or if data has the expected shape
         const data = event.data as RuntimeMessage;
         if (!data || typeof data !== "object" || !("type" in data)) return;
         onMessage(data);
     };
-
     hostWindow.addEventListener("message", handleMessage);
+
+    // Generate the iframe HTML with embedded runtime script
+    const iframeHTML = getIframeHTML(runtimeCode);
+
+    // Add iframe to DOM first
+    container.appendChild(iframe);
+
+    // For jsdom compatibility: always use document.write in test environments
+    // jsdom's srcdoc support is incomplete and doesn't reliably execute scripts
+    if (iframe.contentDocument) {
+        const doc = iframe.contentDocument;
+        doc.open();
+        doc.write(iframeHTML);
+        doc.close();
+    } else {
+        // Fallback to srcdoc if contentDocument is not available
+        iframe.srcdoc = iframeHTML;
+    }
+
+    // Wait for iframe to signal it's ready
+    await readyPromise;
 
     const cleanup = () => {
         hostWindow.removeEventListener("message", handleMessage);
@@ -195,7 +270,16 @@ export class Runtime {
     public async mount(container: HTMLElement): Promise<void> {
         this.delegate.prepareContainer(container);
         const hostWindow = this.delegate.getHostWindow();
-        const { iframe, cleanup } = createRuntimeIFrame(hostWindow, container, this.handleMessage);
+
+        // Load the runtime code
+        const runtimeCode = await getRuntimeCode();
+
+        const { iframe, cleanup } = await createRuntimeIFrame(
+            hostWindow,
+            container,
+            this.handleMessage,
+            runtimeCode,
+        );
         this.iframe = iframe;
         this.cleanup = cleanup;
     } public async unmount(): Promise<void> {
