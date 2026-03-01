@@ -7,13 +7,16 @@
   "bin": {
     "remotion-md": "./dist/cli.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "postbuild": "chmod +x dist/cli.js",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "test": "jest"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "license": "MIT",
   "keywords": [

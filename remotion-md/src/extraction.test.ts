@@ -1,3 +1,4 @@
+import { describe, test, expect } from "vitest";
 import { extractCodeBlocks, classifyBlocks } from './extraction';
 
 describe('Block Extraction', () => {
@@ -21,7 +22,7 @@ End.
 `;
 
         const blocks = extractCodeBlocks(markdown);
-        
+
         expect(blocks).toHaveLength(2);
         expect(blocks[0].language).toBe('ts');
         expect(blocks[0].content).toBe('import { spring } from "remotion";');
@@ -45,7 +46,7 @@ print('world')
 `;
 
         const blocks = extractCodeBlocks(markdown);
-        
+
         expect(blocks).toHaveLength(1);
         expect(blocks[0].language).toBe('ts');
     });
@@ -66,7 +67,7 @@ const c = 3;
 `;
 
         const blocks = extractCodeBlocks(markdown);
-        
+
         expect(blocks).toHaveLength(3);
         blocks.forEach((block, i) => {
             expect(block.content).toBe(`const ${String.fromCharCode(97 + i)} = ${i + 1};`);
@@ -85,7 +86,7 @@ End`;
 
         const blocks = extractCodeBlocks(markdown);
         expect(blocks).toHaveLength(1);
-        
+
         const block = blocks[0];
         expect(block.startLine).toBe(2); // Line with opening fence
         expect(block.endLine).toBe(5); // Line with closing fence
@@ -182,7 +183,7 @@ const x = 1;
 `;
 
         const blocks = extractCodeBlocks(markdown);
-        
+
         expect(blocks).toHaveLength(1);
         expect(blocks[0].content).toBe('const x = 1;\n// Missing closing fence');
         expect(blocks[0].language).toBe('ts');

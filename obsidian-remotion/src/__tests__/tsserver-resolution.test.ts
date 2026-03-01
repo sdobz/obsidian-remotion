@@ -1,3 +1,4 @@
+import { describe, test, expect } from "vitest";
 import ts from "typescript";
 import { createLanguageService } from "../toolchain/ts";
 

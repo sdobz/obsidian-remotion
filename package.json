@@ -14,12 +14,10 @@
     "clean": "npm run clean -w remotion-md-runtime && npm run clean -w obsidian-remotion-runtime && npm run clean -w remotion-md && npm run clean -w obsidian-remotion"
   },
   "devDependencies": {
-    "@types/jest": "^30.0.0",
     "@types/node": "^22.19.7",
-    "jest": "^30.2.0",
     "prettier": "^3.8.1",
-    "ts-jest": "^29.2.5",
-    "typescript": "^4.0.0"
+    "typescript": "^4.0.0",
+    "vitest": "^4.0.18"
   },
   "resolutions": {
     "remotion": "4.0.417",

@@ -1,3 +1,4 @@
+import { describe, test, expect } from "vitest";
 import { extractCodeBlocks, classifyBlocks } from "./extraction";
 import { synthesizeVirtualModule } from "./synthesis";
 

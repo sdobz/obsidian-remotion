@@ -5,6 +5,7 @@
  * This should catch the runtime errors we're seeing in Obsidian.
  */
 
+import { describe, test, expect, afterEach, beforeEach, it } from "vitest";
 import { TestHarness } from "../test-harness";
 import { loadEsbuild, bundleTypeScriptSource, bundleDependenciesBundle } from "../bundler";
 import * as path from "path";

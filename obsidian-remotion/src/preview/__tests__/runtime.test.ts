@@ -8,6 +8,7 @@ import {
     type RuntimeDelegate,
     type RuntimeMessage,
 } from "../runtime";
+import { describe, it, expect } from "vitest";
 
 function createJsdomRuntimeDelegate() {
     const jsdom = new JSDOM("<!DOCTYPE html><body></body>", {
