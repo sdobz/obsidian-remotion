@@ -1,63 +1,37 @@
 /**
- * @jest-environment jsdom
+ * Runtime tests using JSDOM directly for iframe support
  */
 
+import { JSDOM } from 'jsdom';
 import {
     Runtime,
-    executeBundleString,
-    type RuntimeCommand,
     type RuntimeDelegate,
-    type RuntimeMessage,
-    type RuntimeWindowLike,
 } from "../runtime";
 
 function createJsdomRuntimeDelegate() {
-    const commandLog: RuntimeCommand[] = [];
+    // Create a fresh JSDOM instance with script execution enabled
+    const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
+        runScripts: 'dangerously',
+    });
+    const window = dom.window as unknown as Window;
+    const document = window.document;
 
     const delegate: RuntimeDelegate = {
+        getHostWindow() {
+            return window;
+        },
         prepareContainer(container: HTMLElement) {
             container.innerHTML = "";
             container.classList.add("remotion-preview-container");
-        },
-        async mountRuntime(container: HTMLElement, onMessage: (message: RuntimeMessage) => void) {
-            const runtimeRoot = document.createElement("div");
-            runtimeRoot.className = "runtime-root";
-            container.appendChild(runtimeRoot);
-
-            const runtimeWindow: RuntimeWindowLike = {
-                parent: {
-                    postMessage(message: RuntimeMessage) {
-                        onMessage(message);
-                    },
-                },
-            };
-
-            onMessage({ type: "runtime-ready" });
-
-            return {
-                postCommand(command: RuntimeCommand) {
-                    commandLog.push(command);
-                    if (command.type === "bundle") {
-                        executeBundleString(runtimeWindow, command.payload);
-                    } else if (command.type === "scroll") {
-                        onMessage({ type: "player-scroll", playerScrollTop: command.editorScrollTop });
-                    }
-                },
-                getContentWindow() {
-                    return null;
-                },
-                async unmount() {
-                    container.innerHTML = "";
-                },
-            };
         },
     };
 
     return {
         delegate,
-        commandLog,
         createContainer() {
-            return document.createElement("div");
+            const container = document.createElement("div");
+            document.body.appendChild(container);
+            return container;
         },
     };
 }
@@ -84,7 +58,7 @@ describe("Runtime", () => {
     });
 
     it("executes posted bundles", async () => {
-        const { delegate, createContainer, commandLog } = createJsdomRuntimeDelegate();
+        const { delegate, createContainer } = createJsdomRuntimeDelegate();
         const runtime = new Runtime(delegate);
 
         const runtimeErrors: Array<{ message: string; stack: string }> = [];
@@ -105,8 +79,9 @@ describe("Runtime", () => {
         const hardcodedBundle = "window.RemotionBundle = { scenes: [] }; window.parent.postMessage({ type: 'player-status', players: [{ height: 123 }] });";
         runtime.updateBundle(hardcodedBundle);
 
-        expect(commandLog).toHaveLength(1);
-        expect(commandLog[0]).toEqual({ type: "bundle", payload: hardcodedBundle });
+        // Wait for async iframe message processing
+        await new Promise(resolve => setTimeout(resolve, 50));
+
         expect(playerStatuses).toEqual([[123], []]);
         expect(runtimeErrors).toEqual([]);
 

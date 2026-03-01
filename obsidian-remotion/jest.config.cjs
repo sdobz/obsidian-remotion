@@ -1,5 +1,4 @@
 module.exports = {
-  preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ['**/*.test.ts'],
   moduleNameMapper: {
@@ -8,7 +7,10 @@ module.exports = {
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   transform: {
-    '^.+\\.(ts|tsx)$': ['ts-jest', { tsconfig: 'tsconfig.json' }]
+    '^.+\\.tsx?$': 'esbuild-jest',
   },
+  transformIgnorePatterns: [
+    "node_modules/(?!(@exodus)/)"
+  ],
   testTimeout: 30000,
 };
