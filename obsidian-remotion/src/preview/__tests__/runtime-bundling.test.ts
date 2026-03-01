@@ -11,19 +11,83 @@ import path from "path";
 import fs from "fs";
 import { describe, it, expect, beforeEach } from "vitest";
 import { JSDOM } from "jsdom";
+import { Runtime, type RuntimeDelegate, type RuntimeMessage } from "../runtime";
 
 /**
- * Create a JSDOM instance with a container ready for runtime execution
+ * Utility to wait for a specific message type from the runtime.
  */
-function createJsdomWindow() {
-    const jsdom = new JSDOM("<!DOCTYPE html><body><div id='root'></div></body>", {
+function createMessageWaiter() {
+    let pendingWaits: Array<{
+        messageType: string;
+        resolve: (msg: RuntimeMessage) => void;
+        reject: (err: Error) => void;
+        timeout: NodeJS.Timeout;
+    }> = [];
+
+    const handler = (msg: RuntimeMessage) => {
+        const index = pendingWaits.findIndex((w) => w.messageType === msg.type);
+        if (index !== -1) {
+            const [waiter] = pendingWaits.splice(index, 1);
+            clearTimeout(waiter.timeout);
+            waiter.resolve(msg);
+        }
+    };
+
+    const waitFor = <T extends RuntimeMessage["type"]>(
+        messageType: T,
+        timeoutMs: number = 5000,
+    ): Promise<RuntimeMessage> => {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                const index = pendingWaits.findIndex((w) => w.messageType === messageType);
+                if (index !== -1) {
+                    pendingWaits.splice(index, 1);
+                }
+                reject(new Error(`Timeout waiting for message: ${messageType}`));
+            }, timeoutMs);
+
+            pendingWaits.push({
+                messageType,
+                resolve,
+                reject,
+                timeout,
+            });
+        });
+    };
+
+    return { handler, waitFor };
+}
+
+/**
+ * Create a JSDOM-based RuntimeDelegate for testing
+ */
+function createJsdomRuntimeDelegate() {
+    const jsdom = new JSDOM("<!DOCTYPE html><body></body>", {
         runScripts: "dangerously",
         url: "http://localhost",
     });
     const window = jsdom.window as unknown as Window;
-    const container = window.document.getElementById("root") as HTMLElement;
 
-    return { jsdom, window, container };
+    const delegate: RuntimeDelegate = {
+        getHostWindow() {
+            return window;
+        },
+        prepareContainer(container: HTMLElement) {
+            container.innerHTML = "";
+            container.classList.add("remotion-preview-container");
+        },
+    };
+
+    return {
+        delegate,
+        jsdom,
+        window,
+        createContainer() {
+            const container = window.document.createElement("div");
+            window.document.body.appendChild(container);
+            return container;
+        },
+    };
 }
 
 describe("esbuild Bundling Integration", () => {
@@ -49,40 +113,14 @@ describe("esbuild Bundling Integration", () => {
         expect(esbuildInstance.build).toBeDefined();
     });
 
-    it("bundles markdown with user code using BundlePipeline", async () => {
-        const markdown = `
-\`\`\`tsx
-export const MyComponent = () => <div>Hello</div>;
-\`\`\`
-`;
-
-        const pipeline = new BundlePipeline();
-        const notePath = "Test.md";
-        const absoluteNotePath = path.join(examplesDir, notePath);
-        const resolutionContext = new ResolutionContext(examplesDir, absoluteNotePath);
-
-        const result = await pipeline.process({
-            markdown,
-            notePath,
-            absoluteNotePath,
-            resolutionContext,
-            esbuildInstance,
-        });
-
-        // Verify bundle succeeded
-        expect(result.bundleStatus.status).toBe("ok");
-        expect(result.bundleCode).toBeTruthy();
-        expect(result.bundleCode).toContain("RemotionBundle");
-    });
-
-    it("executes bundle in jsdom iframe after bundling in node", async () => {
+    it("bundles and executes markdown through Runtime (matching Obsidian flow)", async () => {
         const markdown = `
 \`\`\`tsx
 export const MyComponent = () => <div>Hello from Bundle</div>;
 \`\`\`
 `;
 
-        // Step 1: Bundle in Node environment
+        // Step 1: Bundle in Node environment (matches main.ts bundle() method)
         const pipeline = new BundlePipeline();
         const notePath = "Test.md";
         const absoluteNotePath = path.join(examplesDir, notePath);
@@ -99,20 +137,57 @@ export const MyComponent = () => <div>Hello from Bundle</div>;
         expect(result.bundleStatus.status).toBe("ok");
         expect(result.bundleCode).toBeTruthy();
 
-        // Step 2: Execute bundle in JSDOM manually
-        const { window, container } = createJsdomWindow();
+        // Step 2: Execute bundle through Runtime (matches PreviewView.updateBundleOutput)
+        const { delegate, createContainer } = createJsdomRuntimeDelegate();
+        const runtime = new Runtime(delegate);
+        const { handler, waitFor } = createMessageWaiter();
 
-        // Create a script element and execute the bundle
-        const script = window.document.createElement("script");
-        script.textContent = result.bundleCode;
-        window.document.body.appendChild(script);
+        const runtimeErrors: Array<{ message: string; stack: string }> = [];
+        const playerStatuses: number[][] = [];
 
-        // Verify that RemotionBundle was created
-        expect((window as any).RemotionBundle).toBeDefined();
-        expect((window as any).RemotionBundle.MyComponent).toBeDefined();
+        runtime.setHandlers({
+            onRuntimeError: (message: string, stack: string) => {
+                runtimeErrors.push({ message, stack });
+                handler({ type: "runtime-error", error: { message, stack } });
+            },
+            onPlayerStatus: (heights: number[]) => {
+                playerStatuses.push(heights);
+                handler({ type: "player-status", players: [] });
+            },
+            onPlayerScroll: () => { },
+            onReady: () => { },
+        });
+
+        await runtime.mount(createContainer());
+
+        // Send bundle to runtime (matches runtime.updateBundle(code))
+        runtime.updateBundle(result.bundleCode);
+
+        // Wait for execution result
+        const response = await Promise.race([
+            waitFor("player-status", 10000),
+            waitFor("runtime-error", 10000),
+        ]);
+
+        // Should succeed without runtime errors
+        if (response.type === "runtime-error") {
+            console.error("Runtime error:", runtimeErrors);
+            throw new Error(`Bundle execution failed: ${runtimeErrors[0]?.message}`);
+        }
+
+        expect(response.type).toBe("player-status");
+        expect(runtimeErrors).toHaveLength(0);
+
+        // Verify bundle executed and set window.RemotionBundle in iframe
+        const iframeWindow = runtime.getContentWindow();
+        expect(iframeWindow).toBeTruthy();
+        expect((iframeWindow as any).RemotionBundle).toBeDefined();
+        expect((iframeWindow as any).RemotionBundle.MyComponent).toBeDefined();
+
+        await runtime.unmount();
     });
 
-    it("resolves React and remotion dependencies correctly", async () => {
+    it("resolves React and remotion dependencies through complete flow", async () => {
         // Create markdown that imports React and remotion
         const markdown = `
 \`\`\`tsx
@@ -144,23 +219,52 @@ export const TestComponent = () => {
         expect(result.bundleStatus.status).toBe("ok");
         expect(result.bundleCode).toBeTruthy();
 
-        // Bundle should contain React and remotion code (bundled together)
-        expect(result.bundleCode).toContain("RemotionBundle");
+        // Step 2: Execute through Runtime
+        const { delegate, createContainer } = createJsdomRuntimeDelegate();
+        const runtime = new Runtime(delegate);
+        const { handler, waitFor } = createMessageWaiter();
 
-        // Step 2: Execute bundle in JSDOM manually
-        const { window } = createJsdomWindow();
+        const runtimeErrors: Array<{ message: string; stack: string }> = [];
 
-        // Create a script element and execute the bundle
-        const script = window.document.createElement("script");
-        script.textContent = result.bundleCode;
-        window.document.body.appendChild(script);
+        runtime.setHandlers({
+            onRuntimeError: (message: string, stack: string) => {
+                runtimeErrors.push({ message, stack });
+                handler({ type: "runtime-error", error: { message, stack } });
+            },
+            onPlayerStatus: (heights: number[]) => {
+                handler({ type: "player-status", players: [] });
+            },
+            onPlayerScroll: () => { },
+            onReady: () => { },
+        });
 
-        // Verify that RemotionBundle was created with TestComponent
-        expect((window as any).RemotionBundle).toBeDefined();
-        expect((window as any).RemotionBundle.TestComponent).toBeDefined();
+        await runtime.mount(createContainer());
 
-        // The component should be callable
-        const component = (window as any).RemotionBundle.TestComponent;
-        expect(typeof component).toBe("function");
+        // Send bundle to runtime
+        runtime.updateBundle(result.bundleCode);
+
+        // Wait for execution result
+        const response = await Promise.race([
+            waitFor("player-status", 10000),
+            waitFor("runtime-error", 10000),
+        ]);
+
+        // Should succeed - React and remotion were resolved and bundled
+        if (response.type === "runtime-error") {
+            console.error("Runtime error:", runtimeErrors);
+            throw new Error(`Dependency resolution failed: ${runtimeErrors[0]?.message}`);
+        }
+
+        expect(response.type).toBe("player-status");
+        expect(runtimeErrors).toHaveLength(0);
+
+        // Verify the bundle executed correctly in the iframe
+        const iframeWindow = runtime.getContentWindow();
+        expect(iframeWindow).toBeTruthy();
+        expect((iframeWindow as any).RemotionBundle).toBeDefined();
+        expect((iframeWindow as any).RemotionBundle.TestComponent).toBeDefined();
+
+        await runtime.unmount();
     });
 });
+
