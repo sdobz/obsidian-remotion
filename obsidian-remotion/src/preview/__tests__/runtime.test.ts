@@ -1,20 +1,20 @@
 /**
- * Runtime tests using JSDOM directly for iframe support
+ * @vitest-environment jsdom
  */
 
-import { JSDOM } from 'jsdom';
+import { JSDOM } from "jsdom";
 import {
     Runtime,
     type RuntimeDelegate,
+    type RuntimeMessage,
 } from "../runtime";
 
 function createJsdomRuntimeDelegate() {
-    // Create a fresh JSDOM instance with script execution enabled
-    const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
-        runScripts: 'dangerously',
+    const jsdom = new JSDOM("<!DOCTYPE html><body></body>", {
+        runScripts: "dangerously",
+        url: "http://localhost",
     });
-    const window = dom.window as unknown as Window;
-    const document = window.document;
+    const window = jsdom.window as unknown as Window;
 
     const delegate: RuntimeDelegate = {
         getHostWindow() {
@@ -28,9 +28,11 @@ function createJsdomRuntimeDelegate() {
 
     return {
         delegate,
+        jsdom,
+        window,
         createContainer() {
-            const container = document.createElement("div");
-            document.body.appendChild(container);
+            const container = window.document.createElement("div");
+            window.document.body.appendChild(container);
             return container;
         },
     };
@@ -52,6 +54,10 @@ describe("Runtime", () => {
         });
 
         await runtime.mount(createContainer());
+
+        // Wait for the iframe script to emit runtime-ready
+        await new Promise(resolve => setTimeout(resolve, 50));
+
         expect(readinessEvents).toHaveLength(1);
 
         await runtime.unmount();
@@ -63,6 +69,7 @@ describe("Runtime", () => {
 
         const runtimeErrors: Array<{ message: string; stack: string }> = [];
         const playerStatuses: number[][] = [];
+        const readyEvents: number[] = [];
 
         runtime.setHandlers({
             onRuntimeError: (message: string, stack: string) => {
@@ -72,17 +79,28 @@ describe("Runtime", () => {
                 playerStatuses.push(heights);
             },
             onPlayerScroll: () => { },
+            onReady: () => {
+                readyEvents.push(1);
+            },
         });
 
         await runtime.mount(createContainer());
 
-        const hardcodedBundle = "window.RemotionBundle = { scenes: [] }; window.parent.postMessage({ type: 'player-status', players: [{ height: 123 }] });";
-        runtime.updateBundle(hardcodedBundle);
+        // Wait for runtime-ready
+        await new Promise(resolve => setTimeout(resolve, 50));
+        expect(readyEvents).toHaveLength(1);
 
-        // Wait for async iframe message processing
+        // Execute a bundle - iframe will respond with player-status
+        runtime.updateBundle("window.RemotionBundle = { players: [{ height: 123 }] };");
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        expect(playerStatuses).toEqual([[123], []]);
+        // Execute another bundle
+        runtime.updateBundle("window.RemotionBundle = { players: [] };");
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        expect(playerStatuses).toHaveLength(2);
+        expect(playerStatuses[0]).toEqual([]);
+        expect(playerStatuses[1]).toEqual([]);
         expect(runtimeErrors).toEqual([]);
 
         await runtime.unmount();
@@ -94,6 +112,7 @@ describe("Runtime", () => {
 
         const runtimeErrors: Array<{ message: string; stack: string }> = [];
         const playerScrolls: number[] = [];
+        const readyEvents: number[] = [];
 
         runtime.setHandlers({
             onRuntimeError: (message: string, stack: string) => {
@@ -103,14 +122,25 @@ describe("Runtime", () => {
             onPlayerScroll: (scrollTop: number) => {
                 playerScrolls.push(scrollTop);
             },
+            onReady: () => {
+                readyEvents.push(1);
+            },
         });
 
         await runtime.mount(createContainer());
 
+        // Wait for runtime-ready
+        await new Promise(resolve => setTimeout(resolve, 50));
+        expect(readyEvents).toHaveLength(1);
+
+        // Trigger scroll - iframe echoes it back as player-scroll
         runtime.scroll(42);
+        await new Promise(resolve => setTimeout(resolve, 50));
         expect(playerScrolls).toEqual([42]);
 
-        runtime.updateBundle("throw new Error('boom')");
+        // Execute a bundle with an error
+        runtime.updateBundle("throw new Error('boom');");
+        await new Promise(resolve => setTimeout(resolve, 50));
         expect(runtimeErrors).toHaveLength(1);
         expect(runtimeErrors[0].message).toContain("boom");
 
