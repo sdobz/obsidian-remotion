@@ -147,4 +147,56 @@ describe("Runtime", () => {
 
         await runtime.unmount();
     });
+
+    it("executes bundles from markdown compilation", async () => {
+        // This test verifies the bundle execution flow in the runtime
+        const { delegate, createContainer } = createJsdomRuntimeDelegate();
+        const runtime = new Runtime(delegate);
+
+        const readyEvents: number[] = [];
+        const playerStatuses: number[][] = [];
+        const runtimeErrors: Array<{ message: string; stack: string }> = [];
+
+        runtime.setHandlers({
+            onRuntimeError: (message: string, stack: string) => {
+                runtimeErrors.push({ message, stack });
+            },
+            onPlayerStatus: (heights: number[]) => {
+                playerStatuses.push(heights);
+            },
+            onPlayerScroll: () => { },
+            onReady: () => {
+                readyEvents.push(1);
+            },
+        });
+
+        await runtime.mount(createContainer());
+
+        // Wait for runtime-ready
+        await new Promise(resolve => setTimeout(resolve, 50));
+        expect(readyEvents).toHaveLength(1);
+
+        // Simulate a bundled payload that sets window.RemotionBundle
+        // The bundler wraps user code in an IIFE with globalName: "__RemotionBundle__"
+        // and then exposes it as window.RemotionBundle
+        const bundledCode = `
+(function() {
+  window.RemotionBundle = {
+    MyComponent: () => ({ type: 'div', props: { children: 'Hello' } })
+  };
+})();
+`;
+
+        // Send the bundle to the runtime via updateBundle
+        runtime.updateBundle(bundledCode);
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // When executeBundle detects window.RemotionBundle, it emits player-status
+        expect(playerStatuses).toHaveLength(1);
+        expect(playerStatuses[0]).toEqual([]);
+        expect(runtimeErrors).toEqual([]);
+
+        await runtime.unmount();
+    });
 });
+
