@@ -134,33 +134,65 @@ function findPackageEntryPoint(pkgDir: string): string | null {
 /**
  * Load esbuild from node_modules
  *
- * Tries to load esbuild from multiple node_modules paths,
- * falling back to the global installation.
+ * Takes an array of node_modules directory paths and attempts to load esbuild
+ * from the first one that exists, falling back to the global installation.
  *
- * @param contextOrPaths BundleContext or array of node_modules paths
+ * @param nodeModulesPaths Array of absolute paths to node_modules directories
  * @returns esbuild instance or null if not found
  */
-export function loadEsbuild(
-    contextOrPaths: BundleContext | string[] | { nodeModulesPaths: string[] },
-): typeof esbuild | null {
-    // Extract nodeModulesPaths from whatever format we receive
-    const nodeModulesPaths = Array.isArray(contextOrPaths)
-        ? contextOrPaths
-        : contextOrPaths.nodeModulesPaths;
+export function loadEsbuild(nodeModulesPaths: string[]): typeof esbuild | null {
+    const isDebug = process.env.DEBUG_ESBUILD === "1";
+
+    if (isDebug) {
+        console.log("[esbuild-loader] Attempting to load esbuild...");
+        console.log("[esbuild-loader] nodeModulesPaths:", nodeModulesPaths);
+    }
 
     for (const modulesPath of nodeModulesPaths) {
         const candidate = path.join(modulesPath, "esbuild");
+
+        if (isDebug) {
+            console.log("[esbuild-loader] Trying:", candidate);
+            // Check if path exists
+            const exists = fs.existsSync(modulesPath);
+            console.log("[esbuild-loader]   node_modules exists:", exists);
+            if (exists) {
+                const contents = fs.readdirSync(modulesPath).slice(0, 5);
+                console.log("[esbuild-loader]   node_modules contents (first 5):", contents);
+            }
+        }
+
         try {
             // eslint-disable-next-line @typescript-eslint/no-var-requires
-            return require(candidate);
-        } catch {
-            // continue
+            const loaded = require(candidate);
+            if (isDebug) {
+                console.log("[esbuild-loader] Successfully loaded esbuild from:", candidate);
+            }
+            return loaded;
+        } catch (err) {
+            if (isDebug) {
+                console.log("[esbuild-loader]   Failed:", (err as any).code || String(err));
+            }
+            // continue to next path
         }
     }
+
+    // Try global esbuild as fallback
+    if (isDebug) {
+        console.log("[esbuild-loader] Trying global esbuild...");
+    }
+
     try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        return require("esbuild");
-    } catch {
+        const loaded = require("esbuild");
+        if (isDebug) {
+            console.log("[esbuild-loader] Successfully loaded global esbuild");
+        }
+        return loaded;
+    } catch (err) {
+        if (isDebug) {
+            console.log("[esbuild-loader] Failed to load global esbuild:", (err as any).code || String(err));
+        }
         console.error(
             "[remotion-md] esbuild not found. Install esbuild (npm i esbuild).",
         );

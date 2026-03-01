@@ -47,9 +47,8 @@ export default class RemotionPlugin extends Plugin {
     if (vaultRoot) {
       this.typecheckManager = new TypecheckManager(vaultRoot);
       this.bundlePipeline = new BundlePipeline();
-      this.esbuildInstance = loadEsbuild(
-        ResolutionContext.forVaultRoot(vaultRoot),
-      );
+      const resolutionContext = ResolutionContext.forVaultRoot(vaultRoot);
+      this.esbuildInstance = loadEsbuild(resolutionContext.nodeModulesPaths);
 
       // Register Language Service extensions
       this.registerLanguageFeatures();

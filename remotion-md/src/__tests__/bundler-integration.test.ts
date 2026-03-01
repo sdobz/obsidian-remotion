@@ -23,10 +23,7 @@ describe("Bundler Integration", () => {
 
     it("should produce a runtime bundle", async () => {
         // Minimal bundle - just the bundle wrapper code
-        const esbuild = loadEsbuild({
-            nodeModulesPaths: [path.join(harness.vault.root, "node_modules")],
-            resolutionDirectory: harness.vault.root,
-        });
+        const esbuild = loadEsbuild([path.join(harness.vault.root, "node_modules")]);
 
         expect(esbuild).not.toBeNull();
 
@@ -57,10 +54,8 @@ export const MyComponent = () => <div>Hello</div>;
         const result = harness.compile(markdown);
         expect(result.code).toBeTruthy();
 
-        const esbuild = loadEsbuild({
-            nodeModulesPaths: [path.join(harness.vault.root, "node_modules")],
-            resolutionDirectory: harness.vault.root,
-        });
+        const nodeModulesPaths = [path.join(harness.vault.root, "node_modules")];
+        const esbuild = loadEsbuild(nodeModulesPaths);
 
         expect(esbuild).not.toBeNull();
 
@@ -69,7 +64,7 @@ export const MyComponent = () => <div>Hello</div>;
             "Test.md.tsx",
             esbuild,
             {
-                nodeModulesPaths: [path.join(harness.vault.root, "node_modules")],
+                nodeModulesPaths,
                 resolutionDirectory: harness.vault.root,
             }
         );
@@ -91,10 +86,8 @@ export const MyComponent = () => <div>Hello from React</div>;
         const result = harness.compile(markdown);
         expect(result.code).toBeTruthy();
 
-        const esbuild = loadEsbuild({
-            nodeModulesPaths: [path.join(harness.vault.root, "node_modules")],
-            resolutionDirectory: harness.vault.root,
-        });
+        const nodeModulesPaths = [path.join(harness.vault.root, "node_modules")];
+        const esbuild = loadEsbuild(nodeModulesPaths);
 
         expect(esbuild).not.toBeNull();
 
@@ -103,7 +96,7 @@ export const MyComponent = () => <div>Hello from React</div>;
             "Test.md.tsx",
             esbuild,
             {
-                nodeModulesPaths: [path.join(harness.vault.root, "node_modules")],
+                nodeModulesPaths,
                 resolutionDirectory: harness.vault.root,
             }
         );
