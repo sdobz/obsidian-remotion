@@ -1,5 +1,20 @@
 const esbuild = require("esbuild");
+const fs = require("fs");
 const isProduction = process.env.NODE_ENV === "production";
+
+// HTML plugin for esbuild
+const htmlPlugin = {
+  name: "html",
+  setup(build) {
+    build.onLoad({ filter: /\.html$/ }, (args) => {
+      const html = fs.readFileSync(args.path, "utf-8");
+      return {
+        contents: `export default ${JSON.stringify(html)};`,
+        loader: "js",
+      };
+    });
+  },
+};
 
 const config = {
   entryPoints: ["src/main.ts"],
@@ -9,6 +24,7 @@ const config = {
   loader: {
     ".json": "json", // Enable JSON imports
   },
+  plugins: [htmlPlugin],
   external: [
     "obsidian",
     "electron",

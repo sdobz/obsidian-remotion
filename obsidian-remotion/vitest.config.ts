@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { htmlPlugin } from "./src/preview/html-plugin";
 
 export default defineConfig({
     test: {
@@ -21,4 +22,5 @@ export default defineConfig({
             "remotion-md": "/home/vkhougaz/projects/obsidian-remotion/remotion-md/src/index.ts",
         },
     },
+    plugins: [htmlPlugin()],
 });

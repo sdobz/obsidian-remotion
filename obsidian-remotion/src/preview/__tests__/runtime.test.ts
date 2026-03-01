@@ -130,28 +130,6 @@ describe("Runtime", () => {
 
         await runtime.mount(createContainer());
 
-        // Set up command handler in iframe
-        const iframeWindow = runtime.getContentWindow();
-        if (iframeWindow) {
-            (iframeWindow as any).__handleCommand = (command: any) => {
-                if (command.type === "bundle") {
-                    try {
-                        const fn = new Function("window", command.payload);
-                        fn(iframeWindow);
-                        // Check if bundle created RemotionBundle and report status
-                        if ((iframeWindow as any).RemotionBundle) {
-                            iframeWindow.parent?.postMessage({ type: "player-status", players: [] }, "*");
-                        }
-                    } catch (error) {
-                        iframeWindow.parent?.postMessage({
-                            type: "runtime-error",
-                            error: { message: String(error), stack: (error as any).stack || "" }
-                        }, "*");
-                    }
-                }
-            };
-        }
-
         // Execute a bundle
         runtime.updateBundle("window.RemotionBundle = { players: [{ height: 123 }] };");
         await waitFor("player-status");
@@ -173,7 +151,6 @@ describe("Runtime", () => {
         const { handler, waitFor } = createMessageWaiter();
 
         const runtimeErrors: Array<{ message: string; stack: string }> = [];
-        const playerScrolls: number[] = [];
 
         runtime.setHandlers({
             onRuntimeError: (message: string, stack: string) => {
@@ -181,49 +158,13 @@ describe("Runtime", () => {
                 handler({ type: "runtime-error", error: { message, stack } });
             },
             onPlayerStatus: () => { },
-            onPlayerScroll: (scrollTop: number) => {
-                playerScrolls.push(scrollTop);
-                handler({ type: "player-scroll", playerScrollTop: scrollTop });
-            },
+            onPlayerScroll: () => { },
             onReady: () => {
                 // Runtime is ready
             },
         });
 
         await runtime.mount(createContainer());
-
-        // Set up command handler in iframe
-        const iframeWindow = runtime.getContentWindow();
-        if (iframeWindow) {
-            (iframeWindow as any).__handleCommand = (command: any) => {
-                if (command.type === "scroll") {
-                    // Echo scroll back as player-scroll
-                    iframeWindow.parent?.postMessage({
-                        type: "player-scroll",
-                        playerScrollTop: command.editorScrollTop
-                    }, "*");
-                } else if (command.type === "bundle") {
-                    try {
-                        const fn = new Function("window", command.payload);
-                        fn(iframeWindow);
-                        if ((iframeWindow as any).RemotionBundle) {
-                            iframeWindow.parent?.postMessage({ type: "player-status", players: [] }, "*");
-                        }
-                    } catch (error) {
-                        iframeWindow.parent?.postMessage({
-                            type: "runtime-error",
-                            error: { message: String(error), stack: (error as any).stack || "" }
-                        }, "*");
-                    }
-                }
-            };
-        }
-
-        // Trigger scroll - iframe echoes it back as player-scroll
-        runtime.scroll(42);
-        const scrollMsg = await waitFor("player-scroll");
-        expect(scrollMsg.type).toBe("player-scroll");
-        expect(playerScrolls).toEqual([42]);
 
         // Execute a bundle with an error
         runtime.updateBundle("throw new Error('boom');");
@@ -256,27 +197,6 @@ describe("Runtime", () => {
         });
 
         await runtime.mount(createContainer());
-
-        // Set up command handler in iframe
-        const iframeWindow = runtime.getContentWindow();
-        if (iframeWindow) {
-            (iframeWindow as any).__handleCommand = (command: any) => {
-                if (command.type === "bundle") {
-                    try {
-                        const fn = new Function("window", command.payload);
-                        fn(iframeWindow);
-                        if ((iframeWindow as any).RemotionBundle) {
-                            iframeWindow.parent?.postMessage({ type: "player-status", players: [] }, "*");
-                        }
-                    } catch (error) {
-                        iframeWindow.parent?.postMessage({
-                            type: "runtime-error",
-                            error: { message: String(error), stack: (error as any).stack || "" }
-                        }, "*");
-                    }
-                }
-            };
-        }
 
         // Simulate a bundled payload that sets window.RemotionBundle
         // The bundler wraps user code in an IIFE with globalName: "__RemotionBundle__"
