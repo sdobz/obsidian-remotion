@@ -7,8 +7,6 @@ import {
 export interface SceneExport {
   exportName: string;
   blockIndex: number;
-  startLine: number;
-  contentStartLineOffset: number;
 }
 
 export interface SynthesizedModule {
@@ -18,9 +16,10 @@ export interface SynthesizedModule {
 
 /**
  * Synthesize a virtual TSX module by concatenating all code blocks.
+ * 
  * @param notePath Original markdown file path
  * @param blocks Classified blocks
- * @returns Synthesized module output
+ * @returns Synthesized module code
  */
 export function synthesizeVirtualModule(
   notePath: string,
@@ -28,18 +27,12 @@ export function synthesizeVirtualModule(
 ): SynthesizedModule {
   const moduleParts: string[] = [];
 
-  // Reset render tracking at module start to prevent accumulation when switching files
-  moduleParts.push(`if (typeof globalThis !== 'undefined') {
-    (globalThis as any).__previewComponents = [];
-    (globalThis as any).__previewOptions = [];
-}`);
-
   const makeSentinel = (block: ClassifiedBlock) => {
     const line = block.startLine + 1; // 1-based line number in markdown
     return `// --- block ${block.blockIndex} @ ${notePath}:${line} ---`;
   };
 
-  // Emit all blocks (both module and jsx-entry) as-is
+  // Emit all blocks as-is
   for (const block of blocks) {
     moduleParts.push(makeSentinel(block));
     moduleParts.push(block.content);
@@ -47,7 +40,6 @@ export function synthesizeVirtualModule(
 
   const code = moduleParts.join("\n\n");
   const sceneExports: SceneExport[] = [];
-
   return { code, sceneExports };
 }
 

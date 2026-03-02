@@ -192,6 +192,10 @@ export class Runtime {
         return this.iframe?.contentWindow ?? null;
     }
 
+    public getIframe(): HTMLIFrameElement | null {
+        return this.iframe ?? null;
+    }
+
     private postCommand(command: RuntimeCommand): void {
         this.iframe?.contentWindow?.postMessage(command, "*");
     }

@@ -1,171 +1,182 @@
 /**
- * Iframe preview main entry point - Wiring Layer
- *
- * This module serves as the coordination layer that:
- * 1. Initializes all feature modules with their DOM dependencies
- * 2. Wires state and callbacks between modules
- * 3. Routes messages to appropriate handlers
- * 4. Makes primary data flows immediately visible
- *
- * Data flows:
- * - Editor → scroll → bands-links (scroll commands)
- * - Editor → bundle → players → bands-links (bundle/reflow commands)
- * - Players → scroll → editor (player scroll events, height updates)
- * - Bundle errors → overlays → editor (error messages)
+ * Iframe preview main entry point - Simplified React rendering
+ * No Remotion, no Players, no complex state - just React components
  */
 
 import type { IframeCommand } from "../shared/types";
 import { BundleManager } from "./bundle";
-import { PlayerManager } from "./players";
-import { BandsLinksRenderer } from "./bands-links";
-import { ScrollCoordinator } from "./scroll";
-import { OverlayManager } from "./overlays";
 
-// Shared DOM cache - all elements are known to exist in the iframe structure
+// Shared DOM elements
 const DOM = {
   loadingScreen: document.getElementById("loading-screen")!,
-  playersContainer: document.getElementById("players-container")!,
-  bandsContainer: document.getElementById("bands-container")!,
-  bandScroller: document.getElementById("bands-scroller")!,
-  playerScroller: document.getElementById("players-scroller")!,
-  linkOverlay: document.getElementById(
-    "link-overlay",
-  ) as unknown as SVGSVGElement,
+  errorScreen: document.getElementById("error-screen")!,
+  errorTitle: document.getElementById("error-title")!,
+  errorMessage: document.getElementById("error-message")!,
+  debugPanel: document.getElementById("debug-content")!,
+  componentsContainer: document.getElementById("components-container")!,
 };
 
 function sendMessage(msg: any): void {
   window.parent.postMessage(msg, "*");
 }
 
-// Initialize all feature modules
-const bundle = new BundleManager();
-const overlays = new OverlayManager(DOM);
-const players = new PlayerManager(DOM, sendMessage);
-const bandsLinks = new BandsLinksRenderer(DOM);
-const scroll = new ScrollCoordinator(
-  DOM,
-  (playerScrollTop: number) => {
-    sendMessage({ type: "player-scroll", playerScrollTop });
-  },
-  () => {
-    const { bandScrollTop, playerScrollTop } = scroll.scrollPositions;
-    bandsLinks.renderLinks(
-      players.playerPositions,
-      bandScrollTop,
-      playerScrollTop,
-    );
-  },
-);
-
-function handleReflow(cmd: IframeCommand & { type: "reflow" }): void {
-  scroll.updateInterpolators(cmd.interpolatorSpecs);
-
-  DOM.bandsContainer.style.height = cmd.bandScrollHeight + "px";
-  DOM.playersContainer.style.height = cmd.playerScrollHeight + "px";
-
-  bandsLinks.renderBands(cmd.bands);
-
-  const { bandScrollTop, playerScrollTop } = scroll.scrollPositions;
-  bandsLinks.renderLinks(
-    players.playerPositions,
-    bandScrollTop,
-    playerScrollTop,
-  );
-
-  players.handleReflow(cmd.players, bundle.sequence);
-  players.scheduleUpdate();
+function hideLoading(): void {
+  DOM.loadingScreen.classList.add("hidden");
 }
 
-function handleBundle(cmd: IframeCommand & { type: "bundle" }): void {
-  if (!cmd.payload) return;
+function showError(title: string, message: string): void {
+  DOM.errorTitle.textContent = title;
+  DOM.errorMessage.textContent = message;
+  DOM.errorScreen.classList.remove("hidden");
+  hideLoading();
+}
 
-  const sequence = bundle.loadBundle(cmd.payload, (message, stack) => {
-    const hasContent = players.contentStatus || overlays.contentStatus;
-    if (hasContent) {
-      overlays.showError(message, stack);
-    } else {
-      overlays.hideLoading();
-      overlays.showError(message, stack);
-    }
-    sendMessage({ type: "runtime-error", error: { message, stack } });
-  });
+function clearError(): void {
+  DOM.errorScreen.classList.add("hidden");
+}
 
-  if (sequence === null) {
-    players.reset();
-    overlays.renderEmptyState();
-    overlays.clearError();
-    overlays.hideLoading();
+function updateDebug(info: Record<string, any>): void {
+  let html = "";
+  for (const [key, value] of Object.entries(info)) {
+    const valueStr = typeof value === "string" ? value : JSON.stringify(value);
+    html += `<div class="debug-item"><strong>${key}:</strong> <span class="debug-value">${escapeHtml(valueStr)}</span></div>`;
+  }
+  DOM.debugPanel.innerHTML = html;
+}
+
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
+  };
+  return text.replace(/[&<>"']/g, (char) => map[char]);
+}
+
+function renderComponents(components: any[]): void {
+  DOM.componentsContainer.innerHTML = "";
+
+  if (components.length === 0) {
+    DOM.componentsContainer.innerHTML = '<div style="color: #666; padding: 20px;">No components to render</div>';
     return;
   }
 
-  overlays.clearError();
-  overlays.hideLoading();
-
-  players.renderAll(sequence);
-  players.scheduleUpdate();
-}
-
-function handleShowError(cmd: IframeCommand & { type: "show-error" }): void {
-  overlays.showError(cmd.message, cmd.stack ?? "");
-  overlays.hideLoading();
-}
-
-function handleClearError(): void {
-  overlays.clearError();
-}
-
-function handleScroll(cmd: IframeCommand & { type: "scroll" }): void {
-  scroll.scrollTo(cmd.editorScrollTop);
-}
-
-function resetPanel(): void {
-  players.reset();
-  bandsLinks.reset();
-  scroll.reset();
-  bundle.reset();
-  overlays.reset();
-}
-
-// Global error handlers to catch runtime errors
-window.addEventListener("error", (event: ErrorEvent) => {
-  event.preventDefault();
-  const message = event.message || "Unknown error";
-  const stack = event.error?.stack || "";
-  overlays.showError(message, stack);
-  sendMessage({ type: "runtime-error", error: { message, stack } });
-});
-
-window.addEventListener(
-  "unhandledrejection",
-  (event: PromiseRejectionEvent) => {
-    event.preventDefault();
-    const message =
-      event.reason?.message ||
-      String(event.reason) ||
-      "Unhandled Promise Rejection";
-    const stack = event.reason?.stack || "";
-    overlays.showError(message, stack);
-    sendMessage({ type: "runtime-error", error: { message, stack } });
-  },
-);
-
-window.addEventListener("message", (event: MessageEvent) => {
-  const data = event.data as IframeCommand | undefined;
-  if (!data) return;
-
-  if (data.type === "reset") {
-    resetPanel();
-  } else if (data.type === "reflow") {
-    handleReflow(data as IframeCommand & { type: "reflow" });
-  } else if (data.type === "bundle") {
-    handleBundle(data as IframeCommand & { type: "bundle" });
-  } else if (data.type === "show-error") {
-    handleShowError(data as IframeCommand & { type: "show-error" });
-  } else if (data.type === "clear-error") {
-    handleClearError();
-  } else if (data.type === "scroll") {
-    handleScroll(data as IframeCommand & { type: "scroll" });
+  for (const comp of components) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "component-item";
+    wrapper.innerHTML = `
+      <div class="component-title">Component: ${escapeHtml(comp.exportName)}</div>
+      <div class="component-root" id="component-${escapeHtml(comp.exportName)}"></div>
+    `;
+    DOM.componentsContainer.appendChild(wrapper);
   }
+
+  // Try to render components with React
+  tryRenderComponents(components);
+}
+
+async function tryRenderComponents(components: any[]): Promise<void> {
+  try {
+    // Check if React is available
+    const React = (window as any).React;
+    const ReactDOM = (window as any).ReactDOM;
+
+    if (!React || !ReactDOM) {
+      updateDebug({
+        "Status": "React not found in bundle",
+        "React": !!React,
+        "ReactDOM": !!ReactDOM,
+      });
+      return;
+    }
+
+    updateDebug({
+      "Status": "Rendering components",
+      "Component count": components.length,
+    });
+
+    for (const comp of components) {
+      const container = document.getElementById(`component-${comp.exportName}`);
+      if (!container) continue;
+
+      try {
+        // Create a wrapper to call the component as a function
+        const element = React.createElement(comp.component);
+        ReactDOM.createRoot(container).render(element);
+      } catch (e) {
+        container.innerHTML = `<div style="color: #f00;">Error rendering component: ${escapeHtml((e as any).message || String(e))}</div>`;
+      }
+    }
+  } catch (e) {
+    const msg = (e as any).message || String(e);
+    updateDebug({
+      "Status": "Error during render",
+      "Error": msg,
+    });
+  }
+}
+
+// Bundle manager instance
+const bundle = new BundleManager();
+
+function handleBundle(code: string): void {
+  try {
+    const sequence = bundle.loadBundle(code, (message, stack) => {
+      showError("Bundle Error", `${message}\n\n${stack}`);
+      sendMessage({ type: "runtime-error", error: { message, stack } });
+    });
+
+    const components = (sequence?.scenes ?? []).map((scene) => ({
+      exportName: scene.id,
+      component: scene.component,
+      options: scene.options,
+    }));
+
+    if (!components || components.length === 0) {
+      clearError();
+      renderComponents([]);
+      updateDebug({
+        "Status": "Bundle loaded",
+        "Components": "0",
+      });
+    } else {
+      clearError();
+      renderComponents(components);
+      updateDebug({
+        "Status": "Bundle loaded",
+        "Components": components.length.toString(),
+        "Names": components.map((c: any) => c.exportName).join(", "),
+      });
+      sendMessage({ type: "bundle-ready", componentCount: components.length });
+    }
+  } catch (err) {
+    const message = (err as any).message || String(err);
+    const stack = (err as any).stack || "";
+    showError("Bundle Execution Error", `${message}\n\n${stack}`);
+    sendMessage({ type: "runtime-error", error: { message, stack } });
+  }
+
+  hideLoading();
+}
+
+// Message handler
+function onMessage(event: MessageEvent): void {
+  const cmd = event.data as IframeCommand;
+
+  if (cmd.type === "bundle") {
+    handleBundle(cmd.payload);
+  }
+}
+
+// Set up message listener
+window.addEventListener("message", onMessage);
+
+// Initial state
+updateDebug({
+  "Status": "Ready",
+  "Waiting for": "bundle",
 });
 
-sendMessage({ type: "iframe-ready" });
+sendMessage({ type: "runtime-ready" });

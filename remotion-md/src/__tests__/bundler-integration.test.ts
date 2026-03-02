@@ -70,7 +70,7 @@ export const MyComponent = () => <div>Hello</div>;
         );
 
         expect(bundle.code).toBeTruthy();
-        expect(bundle.code).toContain("RemotionBundle");
+        expect(bundle.code).toContain("RuntimeBundle");
         expect(bundle.error).toBeUndefined();
     });
 
@@ -103,7 +103,7 @@ export const MyComponent = () => <div>Hello from React</div>;
 
         expect(bundle.code).toBeTruthy();
         // Should have both the user code and React bundled together in IIFE
-        expect(bundle.code).toContain("RemotionBundle");
+        expect(bundle.code).toContain("RuntimeBundle");
         expect(bundle.code.length).toBeGreaterThan(1000); // React adds substantial code
         expect(bundle.error).toBeUndefined();
     });

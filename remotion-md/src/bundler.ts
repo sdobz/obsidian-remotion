@@ -101,37 +101,6 @@ export namespace PluginFactories {
 }
 
 /**
- * Helper to find package entry point
- */
-function findPackageEntryPoint(pkgDir: string): string | null {
-    const pkgJsonPath = path.join(pkgDir, "package.json");
-    if (!fs.existsSync(pkgJsonPath)) {
-        const indexPath = path.join(pkgDir, "index.js");
-        return fs.existsSync(indexPath) ? indexPath : null;
-    }
-
-    try {
-        const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-        const entryPoint =
-            pkg.main ||
-            (pkg.exports && typeof pkg.exports === "string" ? pkg.exports : null) ||
-            (pkg.browser && typeof pkg.browser === "string" ? pkg.browser : null);
-
-        if (entryPoint) {
-            const resolvedPath = path.join(pkgDir, entryPoint);
-            if (fs.existsSync(resolvedPath)) {
-                return resolvedPath;
-            }
-        }
-    } catch {
-        // Ignore parse errors
-    }
-
-    const indexPath = path.join(pkgDir, "index.js");
-    return fs.existsSync(indexPath) ? indexPath : null;
-}
-
-/**
  * Load esbuild from node_modules
  *
  * Takes an array of node_modules directory paths and attempts to load esbuild
@@ -258,7 +227,7 @@ export async function bundleTypeScriptSource(
                 nodePaths: context.nodeModulesPaths,
                 bundle: true,
                 format: "iife",
-                globalName: "__RemotionBundle__",
+                globalName: "__RuntimeBundle__",
                 jsx: "automatic",
                 write: false,
                 logLevel: "error",
@@ -269,12 +238,10 @@ export async function bundleTypeScriptSource(
 
             if (result.outputFiles.length > 0) {
                 const bundledCode = new TextDecoder().decode(result.outputFiles[0].contents);
-                // The IIFE already creates a global with the globalName
-                // Just expose it as RemotionBundle for iframe to access
                 const wrappedCode = `
-                  ${bundledCode}
-                  window.RemotionBundle = __RemotionBundle__;
-                `;
+                                    ${bundledCode}
+                                    window.RuntimeBundle = __RuntimeBundle__;
+                                `;
                 return { code: wrappedCode };
             }
             return { code: "" };

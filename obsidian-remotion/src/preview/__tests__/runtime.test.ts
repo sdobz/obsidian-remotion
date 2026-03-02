@@ -131,11 +131,11 @@ describe("Runtime", () => {
         await runtime.mount(createContainer());
 
         // Execute a bundle
-        runtime.updateBundle("window.RemotionBundle = { players: [{ height: 123 }] };");
+        runtime.updateBundle("window.RuntimeBundle = { players: [{ height: 123 }] };");
         await waitFor("player-status");
 
         // Execute another bundle
-        runtime.updateBundle("window.RemotionBundle = { players: [] };");
+        runtime.updateBundle("window.RuntimeBundle = { players: [] };");
         await waitFor("player-status");
 
         expect(playerStatuses).toHaveLength(2);

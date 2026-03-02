@@ -167,3 +167,4 @@ export function classifyBlocks(blocks: CodeBlock[]): ClassifiedBlock[] {
     type: isLikelyJsxEntry(block.content) ? "jsx-entry" : "module",
   }));
 }
+

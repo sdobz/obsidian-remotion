@@ -13,42 +13,73 @@
             overflow: hidden;
             background: #1a1a1a;
             color: #fff;
+            font-family: monospace;
         }
 
-        .scroller {
+        #debug-panel {
             position: absolute;
-            width: 100%;
-            height: 100%;
+            left: 0;
+            right: 0;
+            top: 0;
+            background: #0a0a0a;
+            border-bottom: 1px solid #333;
+            padding: 12px;
+            max-height: 140px;
+            overflow-y: auto;
+            z-index: 10;
         }
 
-        #bands-scroller {
-            z-index: 1;
-            overflow: hidden;
+        #debug-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #0f0;
+        }
+
+        .debug-item {
+            font-size: 12px;
+            margin: 4px 0;
+            color: #aaa;
+        }
+
+        .debug-value {
+            color: #0f0;
+            word-break: break-all;
         }
 
         #players-scroller {
-            z-index: 4;
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 141px;
+            bottom: 0;
             overflow: auto;
-            pointer-events: auto;
+            padding: 12px;
         }
 
-        #link-overlay {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 3;
+        #players-container {
+            position: relative;
+            min-height: 100%;
         }
 
-        .scrollee {
-            position: absolute;
-            width: 100%;
-        }
-
-        #players-container>div {
+        .player-item {
+            margin-bottom: 20px;
+            border: 1px solid #333;
+            padding: 12px;
             border-radius: 4px;
-            opacity: 0;
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .player-title {
+            color: #0f0;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .player-meta {
+            font-size: 12px;
+            color: #aaa;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         #loading-screen {
@@ -64,6 +95,55 @@
         #loading-screen.hidden {
             display: none;
         }
+
+        #error-overlay {
+            position: absolute;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 6000;
+            padding: 24px;
+        }
+
+        #error-overlay.visible {
+            display: flex;
+        }
+
+        #error-content {
+            max-width: 800px;
+            width: 100%;
+            background: #2a1111;
+            border: 1px solid #8a3030;
+            border-radius: 6px;
+            padding: 14px;
+        }
+
+        #error-title {
+            color: #ff8f8f;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        #error-message {
+            font-size: 12px;
+            color: #ffd4d4;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .component-root {
+            background: white;
+            color: black;
+            padding: 8px;
+            border-radius: 2px;
+            min-height: 40px;
+        }
     </style>
 </head>
 
@@ -71,16 +151,90 @@
     <div id="loading-screen">
         <div>Loading...</div>
     </div>
-    <div class="scroller" id="bands-scroller">
-        <div class="scrollee" id="bands-container"></div>
+    <div id="error-overlay">
+        <div id="error-content">
+            <div id="error-title">Runtime Error</div>
+            <div id="error-message"></div>
+        </div>
     </div>
-    <svg id="link-overlay"></svg>
-    <div class="scroller" id="players-scroller">
-        <div class="scrollee" id="players-container"></div>
+    <div id="debug-panel">
+        <div id="debug-title">Debug Info</div>
+        <div id="debug-content"></div>
     </div>
+    <div id="players-scroller">
+        <div id="players-container"></div>
+    </div>
+
     <script>
         (function () {
             const sendMessage = (msg) => window.parent.postMessage(msg, "*");
+            const loadingScreen = document.getElementById("loading-screen");
+            const playersContainer = document.getElementById("players-container");
+            const debugContent = document.getElementById("debug-content");
+            const errorOverlay = document.getElementById("error-overlay");
+            const errorMessage = document.getElementById("error-message");
+
+            const updateDebug = (obj) => {
+                const entries = Object.entries(obj || {});
+                debugContent.innerHTML = entries.map(([k, v]) => (
+                    `<div class="debug-item"><strong>${k}:</strong> <span class="debug-value">${String(v)}</span></div>`
+                )).join("");
+            };
+
+            const showError = (message, stack) => {
+                errorOverlay.classList.add("visible");
+                errorMessage.textContent = `${message || "Unknown error"}\n\n${stack || ""}`;
+            };
+
+            const hideError = () => {
+                errorOverlay.classList.remove("visible");
+                errorMessage.textContent = "";
+            };
+
+            const hideLoading = () => {
+                loadingScreen.classList.add("hidden");
+            };
+
+            const renderRegisteredComponents = () => {
+                const components = window.__previewComponents || [];
+                const options = window.__previewOptions || [];
+                playersContainer.innerHTML = "";
+
+                components.forEach((component, index) => {
+                    const item = document.createElement("div");
+                    item.className = "player-item";
+                    item.setAttribute("data-component-index", String(index));
+                    item.innerHTML = `
+                        <div class="player-title">render() component #${index + 1}</div>
+                        <div class="player-meta">${JSON.stringify(options[index] || {}, null, 2)}</div>
+                    `;
+                    playersContainer.appendChild(item);
+                });
+
+                const players = Array.from(playersContainer.children).map((element) => ({
+                    height: element.offsetHeight || 100,
+                }));
+
+                sendMessage({ type: "player-status", players });
+
+                updateDebug({
+                    registeredComponents: components.length,
+                    RuntimeBundleKeys: Object.keys(window.RuntimeBundle || {}).join(", "),
+                    playerDomCount: playersContainer.children.length,
+                });
+            };
+
+            window.__dumpRuntimeState = function () {
+                return {
+                    hasRuntimeBundle: !!window.RuntimeBundle,
+                    previewComponents: (window.__previewComponents || []).length,
+                    previewOptions: (window.__previewOptions || []).length,
+                    playerDomCount: playersContainer.children.length,
+                    debugText: debugContent.textContent || "",
+                    loadingHidden: loadingScreen.classList.contains("hidden"),
+                    errorVisible: errorOverlay.classList.contains("visible"),
+                };
+            };
 
             // Set up message handler for commands from host
             window.addEventListener("message", (event) => {
@@ -103,15 +257,19 @@
 
                 if (command.type === "bundle") {
                     try {
-                        // Execute the bundled code
+                        hideError();
+
+                        window.__previewComponents = [];
+                        window.__previewOptions = [];
+
                         const fn = new Function("window", command.payload);
                         fn(window);
 
-                        // Check if bundle created RemotionBundle and report status
-                        if (window.RemotionBundle) {
-                            sendMessage({ type: "player-status", players: [] });
-                        }
+                        renderRegisteredComponents();
+                        hideLoading();
                     } catch (error) {
+                        hideLoading();
+                        showError(error?.message ?? "Unknown error", error?.stack ?? "");
                         sendMessage({
                             type: "runtime-error",
                             error: {
@@ -124,6 +282,11 @@
             };
 
             console.log('[runtime] Ready');
+
+            updateDebug({
+                status: "ready",
+                waitingFor: "bundle",
+            });
 
             // Signal that iframe is ready
             sendMessage({ type: "runtime-ready" });

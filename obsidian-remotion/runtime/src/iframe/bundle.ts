@@ -1,8 +1,3 @@
-/**
- * Bundle execution module
- * Handles loading, evaluating, and managing the module system for user code bundles
- */
-
 type Scene = {
   id: string;
   component: unknown;
@@ -19,44 +14,47 @@ export class BundleManager {
   constructor() { }
 
   /**
-   * Load and evaluate a bundle, extracting the sequence
-   * Returns the sequence on success, null on error
+   * Load and evaluate a bundle and resolve scenes from render() registrations.
    */
   loadBundle(
     code: string,
     onError: (message: string, stack: string) => void,
   ): Sequence | null {
     try {
-      (window as any).RemotionBundle = undefined;
+      const anyWindow = window as unknown as {
+        RuntimeBundle?: unknown;
+        __previewComponents?: unknown[];
+        __previewOptions?: Record<string, unknown>[];
+        __runtimeDebug?: Record<string, unknown>;
+      };
+
+      (window as any).RuntimeBundle = undefined;
+      anyWindow.__previewComponents = [];
+      anyWindow.__previewOptions = [];
+
       // eslint-disable-next-line no-eval
       eval(code);
-      const mod = (window as any).RemotionBundle;
-      let sequence = (mod && mod.default) || mod;
 
-      // If no explicit default export, build scenes from render() calls
-      if (!sequence || !sequence.scenes) {
-        const previewComponents = (globalThis as any).__previewComponents || [];
-        const previewOptions = (globalThis as any).__previewOptions || [];
+      const previewComponents = anyWindow.__previewComponents ?? [];
+      const previewOptions = anyWindow.__previewOptions ?? [];
+      const scenes = previewComponents.map((component: unknown, index: number) => ({
+        id: `__scene_${index}`,
+        component,
+        options: previewOptions[index] ?? {},
+      }));
 
-        if (previewComponents.length > 0) {
-          const scenes = previewComponents.map(
-            (component: unknown, i: number) => ({
-              id: "__scene_" + i,
-              component: component,
-              options: previewOptions[i] || {},
-            }),
-          );
-          sequence = { scenes };
-        } else {
-          // No renders - return null to indicate empty state
-          this.currentSequence = null;
-          return null;
-        }
+      anyWindow.__runtimeDebug = {
+        bundleKeys: Object.keys(((anyWindow.RuntimeBundle as Record<string, unknown>) ?? {})),
+        previewComponentCount: previewComponents.length,
+      };
+
+      if (scenes.length === 0) {
+        this.currentSequence = null;
+        return null;
       }
 
-      // Store sequence
-      this.currentSequence = sequence;
-      return sequence;
+      this.currentSequence = { scenes };
+      return this.currentSequence;
     } catch (err) {
       const message =
         err && (err as any).message ? (err as any).message : String(err);
