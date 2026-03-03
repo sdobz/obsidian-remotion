@@ -39,8 +39,7 @@ describe("ResolutionContext", () => {
 
             expect(context.resolutionDirectory).toBeTruthy();
             expect(context.resolutionDirectory).toBe(vaultRoot);
-            expect(context.isValid()).toBe(true);
-        });
+        });;
     });
 
     describe("consistency across contexts", () => {
@@ -72,7 +71,6 @@ describe("ResolutionContext", () => {
 
             expect(context.nodeModulesPaths.length).toBeGreaterThan(0);
             expect(context.resolutionDirectory).toBe(vaultRoot);
-            expect(context.isValid()).toBe(true);
         });
     });
 });

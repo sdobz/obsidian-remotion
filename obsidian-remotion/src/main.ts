@@ -265,7 +265,7 @@ export default class RemotionPlugin extends Plugin {
         markdown,
         notePath,
         absoluteNotePath,
-        resolutionContext,
+        context: resolutionContext,
         esbuildInstance: this.esbuildInstance,
       });
 

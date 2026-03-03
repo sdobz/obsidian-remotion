@@ -148,7 +148,7 @@ async function main() {
     const nodeModulesPaths = [path.join(process.cwd(), 'node_modules')];
 
     console.log('[remotion-md] Compiling TypeScript...');
-    const compiled = compileVirtualModule(virtualFileName, synthesized.code, nodeModulesPaths, { includeLib: true });
+    const compiled = compileVirtualModule(virtualFileName, synthesized.code, nodeModulesPaths);
 
     if (compiled.diagnostics.length > 0) {
         console.error('\nTypeScript Errors:');

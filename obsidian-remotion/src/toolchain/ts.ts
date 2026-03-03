@@ -197,7 +197,6 @@ export function createLanguageService(
 } {
   const resolutionDirectory = getResolutionDirectory(
     nodeModulesPaths,
-    path.dirname(virtualFileName),
   );
 
   const compilerOptions: ts.CompilerOptions = {

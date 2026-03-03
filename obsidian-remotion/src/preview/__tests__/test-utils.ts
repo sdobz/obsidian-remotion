@@ -154,7 +154,7 @@ export async function bundleMarkdown(options: BundleOptions) {
         markdown,
         notePath,
         absoluteNotePath,
-        resolutionContext,
+        context: resolutionContext,
         esbuildInstance,
     });
 

@@ -67,14 +67,17 @@ export function findNodeModulesPaths(
  * Derive the real directory for module resolution from nodeModulesPaths.
  * Takes the first path (closest to file) and returns its parent directory.
  * E.g., /path/examples/node_modules -> /path/examples
+ * Throws if no node_modules found.
  */
 export function getResolutionDirectory(
   nodeModulesPaths: string[],
-  fallback: string,
 ): string {
-  return nodeModulesPaths.length > 0
-    ? path.dirname(nodeModulesPaths[0])
-    : fallback;
+  if (nodeModulesPaths.length === 0) {
+    throw new Error(
+      "No node_modules found in vault or parent directories. Install dependencies first."
+    );
+  }
+  return path.dirname(nodeModulesPaths[0]);
 }
 
 /**

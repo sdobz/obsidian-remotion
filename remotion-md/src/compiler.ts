@@ -21,19 +21,17 @@ export interface CompileResult {
  * @param fileName File name (e.g., /path/to/Example.md.tsx - derived from Example.md)
  * @param sourceText Source code to compile
  * @param nodeModulesPaths Paths to search for node_modules
- * @param options Compilation options
  */
 export function compileVirtualModule(
   fileName: string,
   sourceText: string,
-  nodeModulesPaths: string[] = [],
-  options: { includeLib?: boolean } = {},
+  nodeModulesPaths: string[],
 ): CompileResult {
-  // Derive the directory for module resolution from the file's location
-  const resolutionDirectory = getResolutionDirectory(
-    nodeModulesPaths,
-    path.dirname(fileName),
-  );
+  if (nodeModulesPaths.length === 0) {
+    throw new Error("No node_modules paths provided for compilation");
+  }
+  // Derive the directory for module resolution from node_modules paths
+  const resolutionDirectory = getResolutionDirectory(nodeModulesPaths);
 
   const compilerOptions: ts.CompilerOptions = {
     jsx: ts.JsxEmit.React,
@@ -41,7 +39,7 @@ export function compileVirtualModule(
     module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.NodeJs,
     noEmitOnError: false,
-    noLib: !options.includeLib, // Allow lib types for CLI usage
+    noLib: true,
     skipLibCheck: true,
     esModuleInterop: true,
     // Enable strict type checking to catch undefined variables
@@ -126,12 +124,16 @@ export function compileVirtualModule(
     readFile: (name) => {
       if (files.has(name)) return files.get(name);
       if (isVirtualMarkdownFileName(name)) {
-        return loadMarkdownModule(name);
+        const content = loadMarkdownModule(name);
+        if (content === undefined) {
+          throw new Error(`Failed to load virtual module: ${name}`);
+        }
+        return content;
       }
       try {
         return fs.readFileSync(name, "utf-8");
-      } catch {
-        return undefined;
+      } catch (err) {
+        throw new Error(`Failed to read file: ${name}`);
       }
     },
     getCanonicalFileName: (name) => name,

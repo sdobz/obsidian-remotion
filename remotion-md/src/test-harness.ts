@@ -67,7 +67,7 @@ export function compilationPipeline(
     // Step 3: Set up resolution paths
     const sourceDir = path.dirname(markdownPath);
     const nodeModulesPaths = findNodeModulesPaths(vaultRoot, sourceDir);
-    const resolutionDir = getResolutionDirectory(nodeModulesPaths, sourceDir);
+    const resolutionDir = getResolutionDirectory(nodeModulesPaths);
 
     // Step 4: Compile TypeScript to JavaScript
     const virtualFileName = markdownPath + ".tsx";
@@ -75,7 +75,6 @@ export function compilationPipeline(
         virtualFileName,
         synthesized.code,
         nodeModulesPaths,
-        { includeLib: true },
     );
 
     return {

@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import ts from "typescript";
 import { createLanguageService } from "../toolchain/ts";
+import path from "path";
 
 describe("language service happy path", () => {
   test("language service syntactic + semantic diagnostics are empty for a trivial file", () => {
@@ -12,9 +13,12 @@ describe("language service happy path", () => {
     const documentVersions = new Map<string, number>();
     documentVersions.set("/virtual/a.ts", 1);
 
+    // Provide actual node_modules path from examples directory
+    const examplesNodeModules = path.resolve(__dirname, "../../../examples/node_modules");
+
     const { languageService } = createLanguageService(
       "/virtual/a.ts",
-      [],
+      [examplesNodeModules],
       virtualFiles,
       documentVersions,
       undefined,

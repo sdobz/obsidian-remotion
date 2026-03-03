@@ -17,13 +17,12 @@ import {
     type BundleResult,
     type BundleContext,
 } from "./bundler";
-import type { ResolutionContext } from "./resolutionContext";
 
 export interface BundlePipelineInput {
     markdown: string; // Raw markdown text
     notePath: string; // Path relative to vault root (e.g., "folder/note.md")
     absoluteNotePath: string; // Full path to markdown file
-    resolutionContext: BundleContext | ResolutionContext;
+    context: BundleContext; // Provides nodeModulesPaths and resolutionDirectory
     esbuildInstance: typeof esbuild;
 }
 
@@ -47,7 +46,7 @@ export class BundlePipeline {
      * Extracts code blocks, synthesizes TSX, and calls esbuild.
      */
     async process(input: BundlePipelineInput): Promise<BundleOutput> {
-        const { markdown, notePath, absoluteNotePath, resolutionContext, esbuildInstance } = input;
+        const { markdown, notePath, absoluteNotePath, context, esbuildInstance } = input;
 
         // Step 1: Extract and classify
         let classified: ClassifiedBlock[];
@@ -91,9 +90,7 @@ export class BundlePipeline {
                 synthesized.code,
                 virtualFileName,
                 esbuildInstance,
-                resolutionContext,
-                absoluteNotePath,
-                markdown,
+                context,
             );
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err);

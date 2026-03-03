@@ -24,7 +24,6 @@ export class ResolutionContext {
     // Determine resolution directory relative to source
     this.resolutionDirectory = getResolutionDirectory(
       this.nodeModulesPaths,
-      path.dirname(sourceFilePath),
     );
   }
 
@@ -34,15 +33,5 @@ export class ResolutionContext {
   static forVaultRoot(vaultRoot: string): ResolutionContext {
     return new ResolutionContext(vaultRoot, vaultRoot);
   }
-
-  /**
-   * Verify paths are valid (basic sanity check)
-   */
-  isValid(): boolean {
-    return !!(
-      this.vaultRoot &&
-      this.nodeModulesPaths.length > 0 &&
-      this.resolutionDirectory
-    );
-  }
+}
 }

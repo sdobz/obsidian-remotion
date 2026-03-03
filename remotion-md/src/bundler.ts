@@ -188,75 +188,61 @@ export async function bundleTypeScriptSource(
     virtualFileName: string,
     esbuildInstance: typeof esbuild | null,
     context: BundleContext,
-    activeMarkdownPath?: string,
-    activeMarkdownText?: string,
 ): Promise<BundleResult> {
     if (!esbuildInstance) {
-        return {
-            code: "/* esbuild not found */",
-            error: new Error("esbuild not available"),
-        };
+        throw new Error("esbuild not available");
     }
 
-    try {
-        // Create markdown reader
-        const readMarkdownText = (markdownPath: string): string | undefined => {
-            if (activeMarkdownPath && markdownPath === activeMarkdownPath) {
-                return activeMarkdownText;
-            }
-            try {
-                return fs.readFileSync(markdownPath, "utf-8");
-            } catch {
-                return undefined;
-            }
-        };
-
-        // Write source code to a temp file so esbuild can resolve relative imports
-        const tempSourcePath = path.join(
-            context.resolutionDirectory,
-            ".remotion-temp-" + Math.random().toString(36).slice(2) + ".tsx",
-        );
-        fs.writeFileSync(tempSourcePath, sourceText);
-
+    // Create markdown reader - always read from filesystem
+    const readMarkdownText = (markdownPath: string): string => {
         try {
-            // Bundle with markdown loader
-            // IIFE format bundles everything together - all dependencies included in the IIFE wrapper
-            const result = await esbuildInstance.build({
-                entryPoints: [tempSourcePath],
-                absWorkingDir: context.resolutionDirectory,
-                nodePaths: context.nodeModulesPaths,
-                bundle: true,
-                format: "iife",
-                globalName: "__RuntimeBundle__",
-                jsx: "automatic",
-                write: false,
-                logLevel: "error",
-                plugins: [
-                    PluginFactories.createMarkdownLoaderPlugin(readMarkdownText),
-                ],
-            });
-
-            if (result.outputFiles.length > 0) {
-                const bundledCode = new TextDecoder().decode(result.outputFiles[0].contents);
-                const wrappedCode = `
-                                    ${bundledCode}
-                                    window.RuntimeBundle = __RuntimeBundle__;
-                                `;
-                return { code: wrappedCode };
-            }
-            return { code: "" };
-        } finally {
-            // Clean up temp file
-            try {
-                fs.unlinkSync(tempSourcePath);
-            } catch {
-                // ignore
-            }
+            return fs.readFileSync(markdownPath, "utf-8");
+        } catch (err) {
+            throw new Error(`Failed to read markdown file: ${markdownPath}`);
         }
-    } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        console.error("[bundler] esbuild error:", error);
-        return { code: "", error };
+    };
+
+    // Write source code to a temp file so esbuild can resolve relative imports
+    const tempSourcePath = path.join(
+        context.resolutionDirectory,
+        ".remotion-temp-" + Math.random().toString(36).slice(2) + ".tsx",
+    );
+    fs.writeFileSync(tempSourcePath, sourceText);
+
+    try {
+        // Bundle with markdown loader
+        // IIFE format bundles everything together - all dependencies included in the IIFE wrapper
+        const result = await esbuildInstance.build({
+            entryPoints: [tempSourcePath],
+            absWorkingDir: context.resolutionDirectory,
+            nodePaths: context.nodeModulesPaths,
+            bundle: true,
+            format: "iife",
+            globalName: "__RuntimeBundle__",
+            jsx: "automatic",
+            write: false,
+            logLevel: "error",
+            plugins: [
+                PluginFactories.createMarkdownLoaderPlugin(readMarkdownText),
+            ],
+        });
+
+        if (result.outputFiles.length === 0) {
+            throw new Error("esbuild produced no output");
+        }
+        const bundledCode = new TextDecoder().decode(result.outputFiles[0].contents);
+        const wrappedCode = `
+${bundledCode}
+window.RuntimeBundle = __RuntimeBundle__;
+`;
+        return { code: wrappedCode };
+    } finally {
+        // Clean up temp file
+        try {
+            fs.unlinkSync(tempSourcePath);
+        } catch {
+            // ignore cleanup errors
+        }
     }
 }
 
