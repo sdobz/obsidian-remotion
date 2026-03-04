@@ -91,7 +91,7 @@ export interface RuntimeTestContext {
     runtime: Runtime;
     waitFor: ReturnType<typeof createMessageWaiter>["waitFor"];
     runtimeErrors: Array<{ message: string; stack: string }>;
-    playerStatuses: number[][];
+    widgetStatuses: number[][];
     container: HTMLElement;
 }
 
@@ -101,18 +101,18 @@ export async function setupRuntimeTest(): Promise<RuntimeTestContext> {
     const { handler, waitFor } = createMessageWaiter();
 
     const runtimeErrors: Array<{ message: string; stack: string }> = [];
-    const playerStatuses: number[][] = [];
+    const widgetStatuses: number[][] = [];
 
     runtime.setHandlers({
         onRuntimeError: (message: string, stack: string) => {
             runtimeErrors.push({ message, stack });
             handler({ type: "runtime-error", error: { message, stack } });
         },
-        onPlayerStatus: (heights: number[]) => {
-            playerStatuses.push(heights);
-            handler({ type: "player-status", players: [] });
+        onWidgetStatus: (heights: number[]) => {
+            widgetStatuses.push(heights);
+            handler({ type: "widget-status", widgets: [] });
         },
-        onPlayerScroll: () => { },
+        onWidgetScroll: () => { },
         onReady: () => { },
     });
 
@@ -123,7 +123,7 @@ export async function setupRuntimeTest(): Promise<RuntimeTestContext> {
         runtime,
         waitFor,
         runtimeErrors,
-        playerStatuses,
+        widgetStatuses,
         container,
     };
 }
@@ -193,7 +193,7 @@ export async function executeBundle(
     ctx.runtime.updateBundle(bundleCode);
 
     const response = await Promise.race([
-        ctx.waitFor("player-status", timeoutMs),
+        ctx.waitFor("widget-status", timeoutMs),
         ctx.waitFor("runtime-error", timeoutMs),
     ]);
 

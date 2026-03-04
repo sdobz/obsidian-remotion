@@ -1,7 +1,7 @@
 import ts from "typescript";
 import * as fs from "fs";
 import * as path from "path";
-import { extractPreviewCallLocations, PreviewSpan } from "./previewLocations";
+import { extractWidgetSpans, WidgetSpan } from "./previewLocations";
 import {
   createModuleResolver,
   getResolutionDirectory,
@@ -13,7 +13,7 @@ import { synthesizeMarkdownModule } from "./synthesis";
 export interface CompileResult {
   code: string;
   diagnostics: readonly ts.Diagnostic[];
-  previewLocations: PreviewSpan[];
+  widgetSpans: WidgetSpan[];
 }
 
 /**
@@ -151,8 +151,8 @@ export function compileVirtualModule(
   let output = "";
   const program = ts.createProgram([fileName], compilerOptions, host);
   const sourceFile = program.getSourceFile(fileName);
-  const previewLocations = sourceFile
-    ? extractPreviewCallLocations(sourceFile)
+  const widgetSpans = sourceFile
+    ? extractWidgetSpans(sourceFile)
     : [];
   const diagnostics = ts.getPreEmitDiagnostics(program);
 
@@ -166,5 +166,5 @@ export function compileVirtualModule(
     undefined,
   );
 
-  return { code: output, diagnostics, previewLocations };
+  return { code: output, diagnostics, widgetSpans };
 }

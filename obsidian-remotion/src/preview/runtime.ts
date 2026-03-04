@@ -7,12 +7,12 @@ export type RuntimeMessage =
         error?: { message?: string; stack?: string };
     }
     | {
-        type: "player-status";
-        players: PlayerStatus[];
+        type: "widget-status";
+        widgets: WidgetStatus[];
     }
     | {
-        type: "player-scroll";
-        playerScrollTop: number;
+        type: "widget-scroll";
+        widgetScrollTop: number;
     }
     | {
         type: "runtime-ready";
@@ -34,8 +34,8 @@ export type RuntimeCommand =
         type: "reflow";
         bandScrollHeight: number;
         bands: NullArray<Band>;
-        playerScrollHeight: number;
-        players: NullArray<Band>;
+        widgetScrollHeight: number;
+        widgets: NullArray<Band>;
         interpolatorSpecs: InterpolatorSpec[];
     }
     | {
@@ -47,7 +47,7 @@ export type RuntimeCommand =
         editorScrollTop: number;
     };
 
-export interface PlayerStatus {
+export interface WidgetStatus {
     height: number;
     error?: string;
 }
@@ -159,10 +159,10 @@ export class Runtime {
             const message = data.error?.message ?? "Unknown runtime error";
             const stack = data.error?.stack ?? "";
             this.onRuntimeError(message, stack);
-        } else if (data.type === "player-status") {
-            this.onPlayerStatus(data.players.map((player) => player.height));
-        } else if (data.type === "player-scroll") {
-            this.onPlayerScroll(data.playerScrollTop);
+        } else if (data.type === "widget-status") {
+            this.onWidgetStatus(data.widgets.map((widget) => widget.height));
+        } else if (data.type === "widget-scroll") {
+            this.onWidgetScroll(data.widgetScrollTop);
         } else if (data.type === "runtime-ready") {
             this.onReady();
         }
@@ -170,21 +170,21 @@ export class Runtime {
 
     private onRuntimeError(_message: string, _stack: string): void { }
 
-    private onPlayerStatus(_heights: number[]): void { }
+    private onWidgetStatus(_heights: number[]): void { }
 
-    private onPlayerScroll(_scrollTop: number): void { }
+    private onWidgetScroll(_scrollTop: number): void { }
 
     private onReady(): void { }
 
     public setHandlers(handlers: {
         onRuntimeError: (message: string, stack: string) => void;
-        onPlayerStatus: (heights: number[]) => void;
-        onPlayerScroll: (scrollTop: number) => void;
+        onWidgetStatus: (heights: number[]) => void;
+        onWidgetScroll: (scrollTop: number) => void;
         onReady?: () => void;
     }): void {
         this.onRuntimeError = handlers.onRuntimeError;
-        this.onPlayerStatus = handlers.onPlayerStatus;
-        this.onPlayerScroll = handlers.onPlayerScroll;
+        this.onWidgetStatus = handlers.onWidgetStatus;
+        this.onWidgetScroll = handlers.onWidgetScroll;
         this.onReady = handlers.onReady ?? (() => { });
     }
 
@@ -207,16 +207,16 @@ export class Runtime {
     public reflow(
         bandScrollHeight: number,
         bands: NullArray<Band>,
-        playerScrollHeight: number,
-        players: NullArray<Band>,
+        widgetScrollHeight: number,
+        widgets: NullArray<Band>,
         interpolatorSpecs: InterpolatorSpec[],
     ): void {
         this.postCommand({
             type: "reflow",
             bandScrollHeight,
             bands,
-            playerScrollHeight,
-            players,
+            widgetScrollHeight,
+            widgets,
             interpolatorSpecs,
         });
     }

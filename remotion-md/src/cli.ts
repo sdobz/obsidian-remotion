@@ -5,7 +5,7 @@ import * as ts from 'typescript';
 import { extractCodeBlocks, classifyBlocks } from './extraction';
 import { synthesizeVirtualModule } from './synthesis';
 import { compileVirtualModule } from './compiler';
-import { extractPreviewCallLocations } from './previewLocations';
+import { extractWidgetSpans } from './previewLocations';
 
 interface RenderConfig {
     compositionId?: string;
@@ -164,17 +164,17 @@ async function main() {
         process.exit(1);
     }
 
-    // Extract preview locations
-    const previewLocations = compiled.previewLocations;
+    // Extract widget locations
+    const widgetSpans = compiled.widgetSpans;
 
-    if (previewLocations.length === 0) {
-        console.error('Error: No preview() calls found in compiled code');
-        console.error('This should not happen if preview() calls were detected in source.');
+    if (widgetSpans.length === 0) {
+        console.error('Error: No render() calls found in compiled code');
+        console.error('This should not happen if render() calls were detected in source.');
         process.exit(1);
     }
 
     // Use last preview as default composition
-    const defaultCompositionId = `preview-${previewLocations.length - 1}`;
+    const defaultCompositionId = `widget-${widgetSpans.length - 1}`;
 
     // Config fallback to defaults (runtime options will override in composition)
     const finalConfig: Required<RenderConfig> = {

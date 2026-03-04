@@ -1,5 +1,5 @@
 import type { EditorView } from "@codemirror/view";
-import type { PreviewSpan } from "remotion-md";
+import type { WidgetSpan } from "remotion-md";
 import type { Band, InterpolatorSpec, NullArray } from "obsidian-remotion-runtime";
 import {
   buildInterpolators,
@@ -27,7 +27,7 @@ export interface ScrollDelegate {
 // ============================================================================
 // Scroll and Band Management
 //
-// Flow: SemanticSpans → Bands → PlayerPositions → Viewport
+// Flow: SemanticSpans → Bands → WidgetPositions → Viewport
 //
 // All calculations depend on current editor scroll state. When scroll/height
 // changes, positions are recalculated. We store semantic spans for replay.
@@ -36,7 +36,7 @@ export interface ScrollDelegate {
 const SCROLL_COMMAND_THRESHOLD = 0.5; // pixels - ignore tiny diffs
 export class ScrollManager {
   private resizeObserver: ResizeObserver | null = null;
-  private currentSpans: PreviewSpan[] = [];
+  private currentSpans: WidgetSpan[] = [];
   private currentSpanPositions: NullArray<Band> = [];
   private currentPreviewPositions: NullArray<Band> = [];
   private previewScrollHeight: number = 0;
@@ -71,10 +71,10 @@ export class ScrollManager {
   }
 
   /**
-   * Update the pixel bands based on new semantic spans from preview
+   * Update the pixel bands based on new semantic spans from widgets
    * @param spans
    */
-  handlePreviewSpans(spans: PreviewSpan[]): void {
+  handleWidgetSpans(spans: WidgetSpan[]): void {
     this.currentSpans = spans;
     this.handleReflow();
   }

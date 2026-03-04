@@ -94,8 +94,8 @@ describe("Runtime", () => {
         let readyFired = false;
         runtime.setHandlers({
             onRuntimeError: () => { },
-            onPlayerStatus: () => { },
-            onPlayerScroll: () => { },
+            onWidgetStatus: () => { },
+            onWidgetScroll: () => { },
             onReady: () => {
                 readyFired = true;
             },
@@ -114,15 +114,15 @@ describe("Runtime", () => {
         const runtime = new Runtime(delegate);
         const { handler, waitFor } = createMessageWaiter();
 
-        const playerStatuses: number[][] = [];
+        const widgetStatuses: number[][] = [];
 
         runtime.setHandlers({
             onRuntimeError: () => { },
-            onPlayerStatus: (heights: number[]) => {
-                playerStatuses.push(heights);
-                handler({ type: "player-status", players: [] });
+            onWidgetStatus: (heights: number[]) => {
+                widgetStatuses.push(heights);
+                handler({ type: "widget-status", widgets: [] });
             },
-            onPlayerScroll: () => { },
+            onWidgetScroll: () => { },
             onReady: () => {
                 // Just flag that we're ready, don't need to handler() it
             },
@@ -131,16 +131,16 @@ describe("Runtime", () => {
         await runtime.mount(createContainer());
 
         // Execute a bundle
-        runtime.updateBundle("window.RuntimeBundle = { players: [{ height: 123 }] };");
-        await waitFor("player-status");
+        runtime.updateBundle("window.RuntimeBundle = { widgets: [{ height: 123 }] };");
+        await waitFor("widget-status");
 
         // Execute another bundle
-        runtime.updateBundle("window.RuntimeBundle = { players: [] };");
-        await waitFor("player-status");
+        runtime.updateBundle("window.RuntimeBundle = { widgets: [] };");
+        await waitFor("widget-status");
 
-        expect(playerStatuses).toHaveLength(2);
-        expect(playerStatuses[0]).toEqual([]);
-        expect(playerStatuses[1]).toEqual([]);
+        expect(widgetStatuses).toHaveLength(2);
+        expect(widgetStatuses[0]).toEqual([]);
+        expect(widgetStatuses[1]).toEqual([]);
 
         await runtime.unmount();
     });
@@ -157,8 +157,8 @@ describe("Runtime", () => {
                 runtimeErrors.push({ message, stack });
                 handler({ type: "runtime-error", error: { message, stack } });
             },
-            onPlayerStatus: () => { },
-            onPlayerScroll: () => { },
+            onWidgetStatus: () => { },
+            onWidgetScroll: () => { },
             onReady: () => {
                 // Runtime is ready
             },

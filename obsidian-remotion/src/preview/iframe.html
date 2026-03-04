@@ -46,7 +46,7 @@
             word-break: break-all;
         }
 
-        #players-scroller {
+        #widgets-scroller {
             position: absolute;
             left: 0;
             right: 0;
@@ -56,12 +56,12 @@
             padding: 12px;
         }
 
-        #players-container {
+        #widgets-container {
             position: relative;
             min-height: 100%;
         }
 
-        .player-item {
+        .widget-item {
             margin-bottom: 20px;
             border: 1px solid #333;
             padding: 12px;
@@ -69,13 +69,13 @@
             background: rgba(255, 255, 255, 0.04);
         }
 
-        .player-title {
+        .widget-title {
             color: #0f0;
             font-weight: bold;
             margin-bottom: 8px;
         }
 
-        .player-meta {
+        .widget-meta {
             font-size: 12px;
             color: #aaa;
             white-space: pre-wrap;
@@ -161,15 +161,15 @@
         <div id="debug-title">Debug Info</div>
         <div id="debug-content"></div>
     </div>
-    <div id="players-scroller">
-        <div id="players-container"></div>
+    <div id="widgets-scroller">
+        <div id="widgets-container"></div>
     </div>
 
     <script>
         (function () {
             const sendMessage = (msg) => window.parent.postMessage(msg, "*");
             const loadingScreen = document.getElementById("loading-screen");
-            const playersContainer = document.getElementById("players-container");
+            const widgetsContainer = document.getElementById("widgets-container");
             const debugContent = document.getElementById("debug-content");
             const errorOverlay = document.getElementById("error-overlay");
             const errorMessage = document.getElementById("error-message");
@@ -195,32 +195,32 @@
                 loadingScreen.classList.add("hidden");
             };
 
-            const renderRegisteredComponents = () => {
+            const renderRegisteredWidgets = () => {
                 const components = window.__previewComponents || [];
                 const options = window.__previewOptions || [];
-                playersContainer.innerHTML = "";
+                widgetsContainer.innerHTML = "";
 
                 components.forEach((component, index) => {
                     const item = document.createElement("div");
-                    item.className = "player-item";
+                    item.className = "widget-item";
                     item.setAttribute("data-component-index", String(index));
                     item.innerHTML = `
-                        <div class="player-title">render() component #${index + 1}</div>
-                        <div class="player-meta">${JSON.stringify(options[index] || {}, null, 2)}</div>
+                        <div class="widget-title">render() component #${index + 1}</div>
+                        <div class="widget-meta">${JSON.stringify(options[index] || {}, null, 2)}</div>
                     `;
-                    playersContainer.appendChild(item);
+                    widgetsContainer.appendChild(item);
                 });
 
-                const players = Array.from(playersContainer.children).map((element) => ({
+                const widgets = Array.from(widgetsContainer.children).map((element) => ({
                     height: element.offsetHeight || 100,
                 }));
 
-                sendMessage({ type: "player-status", players });
+                sendMessage({ type: "widget-status", widgets });
 
                 updateDebug({
                     registeredComponents: components.length,
                     RuntimeBundleKeys: Object.keys(window.RuntimeBundle || {}).join(", "),
-                    playerDomCount: playersContainer.children.length,
+                    widgetDomCount: widgetsContainer.children.length,
                 });
             };
 
@@ -229,7 +229,7 @@
                     hasRuntimeBundle: !!window.RuntimeBundle,
                     previewComponents: (window.__previewComponents || []).length,
                     previewOptions: (window.__previewOptions || []).length,
-                    playerDomCount: playersContainer.children.length,
+                    widgetDomCount: widgetsContainer.children.length,
                     debugText: debugContent.textContent || "",
                     loadingHidden: loadingScreen.classList.contains("hidden"),
                     errorVisible: errorOverlay.classList.contains("visible"),
@@ -265,7 +265,7 @@
                         const fn = new Function("window", command.payload);
                         fn(window);
 
-                        renderRegisteredComponents();
+                        renderRegisteredWidgets();
                         hideLoading();
                     } catch (error) {
                         hideLoading();

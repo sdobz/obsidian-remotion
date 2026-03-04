@@ -48,8 +48,8 @@ const MyComp = () => <div>Hello</div>;
         expect(ctx.runtimeErrors).toHaveLength(0);
 
         const iframe = ctx.runtime.getIframe();
-        const playersContainer = iframe!.contentDocument!.getElementById("players-container");
-        expect(playersContainer!.children.length).toBe(0);
+        const widgetsContainer = iframe!.contentDocument!.getElementById("widgets-container");
+        expect(widgetsContainer!.children.length).toBe(0);
 
         await ctx.runtime.unmount();
     });
@@ -78,8 +78,8 @@ render(MyComp, { width: 1920, height: 1080, fps: 30, durationInFrames: 60 });
         await new Promise(resolve => setTimeout(resolve, 500));
 
         const iframe = ctx.runtime.getIframe();
-        const playersContainer = iframe!.contentDocument!.getElementById("players-container");
-        expect(playersContainer!.children.length).toBe(1);
+        const widgetsContainer = iframe!.contentDocument!.getElementById("widgets-container");
+        expect(widgetsContainer!.children.length).toBe(1);
 
         await ctx.runtime.unmount();
     });
@@ -112,8 +112,8 @@ render(Two, { width: 1280, height: 720, fps: 24, durationInFrames: 90 });
 
         expect(ctx.runtimeErrors).toHaveLength(0);
         const iframe = ctx.runtime.getIframe();
-        const playersContainer = iframe!.contentDocument!.getElementById("players-container");
-        expect(playersContainer!.children.length).toBe(2);
+        const widgetsContainer = iframe!.contentDocument!.getElementById("widgets-container");
+        expect(widgetsContainer!.children.length).toBe(2);
 
         await ctx.runtime.unmount();
     });
@@ -148,7 +148,7 @@ render(Comp, { width: 1000, height: 500, fps: 30, durationInFrames: 45 });
 
         expect(dump).toBeDefined();
         expect(dump.previewComponents).toBe(1);
-        expect(dump.playerDomCount).toBe(1);
+        expect(dump.widgetDomCount).toBe(1);
         expect(dump.loadingHidden).toBe(true);
 
         await ctx.runtime.unmount();

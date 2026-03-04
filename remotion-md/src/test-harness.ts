@@ -34,8 +34,8 @@ export interface CompilationPipelineResult {
     code: string;
     /** TypeScript diagnostics */
     diagnostics: readonly import("typescript").Diagnostic[];
-    /** Locations of preview() calls in markdown */
-    previewLocations: Array<{ line: number; column: number }>;
+    /** Locations of render() calls in markdown */
+    widgetSpans: Array<{ line: number; column: number }>;
     /** Synthesized source code */
     synthesizedSource: string;
 }
@@ -80,7 +80,7 @@ export function compilationPipeline(
     return {
         code: compiled.code,
         diagnostics: compiled.diagnostics,
-        previewLocations: compiled.previewLocations,
+        widgetSpans: compiled.widgetSpans,
         synthesizedSource: synthesized.code,
     };
 }

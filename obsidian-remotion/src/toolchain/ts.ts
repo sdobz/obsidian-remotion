@@ -2,12 +2,12 @@ import ts from "typescript";
 import type { MarkdownView } from "obsidian";
 import {
   createModuleResolver,
-  extractPreviewCallLocations,
+  extractWidgetSpans,
   getResolutionDirectory,
   isVirtualMarkdownFileName,
   synthesizeMarkdownModule,
   virtualMarkdownToFileName,
-  type PreviewSpan,
+  type WidgetSpan,
 } from "remotion-md";
 import fs from "fs";
 import path from "path";
@@ -136,10 +136,10 @@ class CoordinateMapper {
     return currentBlock.markdownFenceLine + 1 + lineOffset;
   }
 
-  mapPreviewLocations(
-    locations: PreviewSpan[],
+  mapWidgetSpans(
+    locations: WidgetSpan[],
     markdownText: string,
-  ): PreviewSpan[] {
+  ): WidgetSpan[] {
     const mdLineStarts = buildLineStarts(markdownText);
 
     const mapSynthLineToMarkdownLine = (synthLine: number): number => {
@@ -175,13 +175,13 @@ class CoordinateMapper {
   }
 }
 
-export function mapPreviewLocationsToMarkdown(
-  locations: PreviewSpan[],
+export function mapWidgetSpansToMarkdown(
+  locations: WidgetSpan[],
   synthCode: string,
   markdownText: string,
-): PreviewSpan[] {
+): WidgetSpan[] {
   const mapper = new CoordinateMapper(synthCode);
-  return mapper.mapPreviewLocations(locations, markdownText);
+  return mapper.mapWidgetSpans(locations, markdownText);
 }
 
 export function createLanguageService(
@@ -421,14 +421,14 @@ export class LanguageServiceQueries {
   }
 }
 
-export function getPreviewCallLocations(
+export function getWidgetSpans(
   languageService: ts.LanguageService | null,
   virtualFileName: string,
-): PreviewSpan[] {
+): WidgetSpan[] {
   if (!languageService) return [];
   const sourceFile = languageService
     .getProgram()
     ?.getSourceFile(virtualFileName);
   if (!sourceFile) return [];
-  return extractPreviewCallLocations(sourceFile);
+  return extractWidgetSpans(sourceFile);
 }

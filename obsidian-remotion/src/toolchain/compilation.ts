@@ -6,15 +6,15 @@ import {
   ResolutionContext,
   type ClassifiedBlock,
   type MarkdownDiagnostic,
-  type PreviewSpan,
+  type WidgetSpan,
 } from "remotion-md";
 import path from "path";
 import ts from "typescript";
 import { MarkdownView } from "obsidian";
 import {
   createLanguageService,
-  getPreviewCallLocations,
-  mapPreviewLocationsToMarkdown,
+  getWidgetSpans,
+  mapWidgetSpansToMarkdown,
   LanguageServiceQueries,
 } from "./ts";
 
@@ -23,7 +23,7 @@ import {
  * Bundling is no longer a responsibility of this manager.
  */
 export interface TypecheckResult {
-  previewLocations: PreviewSpan[];
+  widgetSpans: WidgetSpan[];
   typecheckStatus: { status: "ok" | "error"; errorCount: number };
   diagnostics: MarkdownDiagnostic[];
   synthesizedCode: string;
@@ -131,13 +131,13 @@ export class TypecheckManager {
       (d) => d.category === "error",
     ).length;
 
-    // Get preview call locations from AST and map to markdown
-    const previewLocationsRaw = getPreviewCallLocations(
+    // Get widget call locations from AST and map to markdown
+    const widgetSpansRaw = getWidgetSpans(
       this.languageService,
       virtualFileName,
     );
-    const previewLocations = mapPreviewLocationsToMarkdown(
-      previewLocationsRaw,
+    const widgetSpans = mapWidgetSpansToMarkdown(
+      widgetSpansRaw,
       synthesized.code,
       markdown,
     );
@@ -149,7 +149,7 @@ export class TypecheckManager {
     );
 
     return {
-      previewLocations,
+      widgetSpans,
       synthesizedCode: synthesized.code,
       classified,
       typecheckStatus: { status: errorCount > 0 ? "error" : "ok", errorCount },

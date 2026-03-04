@@ -4,7 +4,7 @@ import ts from "typescript";
  * Semantic location of a render() call in source code.
  * Includes line/column position and length for scroll synchronization.
  */
-export interface PreviewSpan {
+export interface WidgetSpan {
   /** Line number in source (1-based) */
   line: number;
   /** Column position in line (0-based) */
@@ -13,26 +13,31 @@ export interface PreviewSpan {
   pos: number;
   /** Length of the render() call */
   length: number;
-  /** Full text of the preview call */
+  /** Full text of the widget call */
   text: string;
 }
 
 /**
- * @deprecated Use PreviewSpan instead
+ * @deprecated Use WidgetSpan instead
  */
-export type PreviewCallLocation = PreviewSpan;
+export type PreviewCallLocation = WidgetSpan;
+
+/**
+ * @deprecated Use WidgetSpan instead
+ */
+export type PreviewSpan = WidgetSpan;
 
 /**
  * Extract locations of all render() function calls from TypeScript AST.
- * Used to anchor scroll positions in the preview pane.
+ * Used to anchor scroll positions for widgets.
  *
  * @param sourceFile TypeScript SourceFile to analyze
  * @returns Array of semantic locations in order of appearance
  */
-export function extractPreviewCallLocations(
+export function extractWidgetSpans(
   sourceFile: ts.SourceFile,
-): PreviewSpan[] {
-  const locations: PreviewSpan[] = [];
+): WidgetSpan[] {
+  const locations: WidgetSpan[] = [];
 
   function visit(node: ts.Node) {
     // Look for call expressions like render(...)
@@ -69,6 +74,11 @@ export function extractPreviewCallLocations(
   visit(sourceFile);
   return locations;
 }
+
+/**
+ * @deprecated Use extractWidgetSpans instead
+ */
+export const extractPreviewCallLocations = extractWidgetSpans;
 
 /**
  * Detect render() misuse, such as passing JSX instead of a component reference.
