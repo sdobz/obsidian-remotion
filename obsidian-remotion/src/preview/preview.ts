@@ -50,10 +50,10 @@ export class PreviewView extends ItemView implements ScrollDelegate, RuntimeDele
       onRuntimeError: (message: string, stack: string) => {
         console.error("Remotion runtime error:", message, stack);
       },
-      onPlayerStatus: (heights: number[]) => {
+      onWidgetStatus: (heights: number[]) => {
         this.scrollManager?.handlePlayerHeights(heights);
       },
-      onPlayerScroll: (scrollTop: number) => {
+      onWidgetScroll: (scrollTop: number) => {
         this.scrollManager?.handlePlayerScroll(scrollTop);
       },
     });

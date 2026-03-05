@@ -97,7 +97,7 @@ export class PlayerManager {
 
       if (heightsChanged) {
         this.previousHeights = playerStatuses.map((s) => s.height);
-        this.sendMessage({ type: "player-status", players: playerStatuses });
+        this.sendMessage({ type: "widget-status", widgets: playerStatuses });
       }
     }, 100);
   }

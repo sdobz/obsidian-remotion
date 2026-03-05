@@ -4,10 +4,13 @@
 
 import type { Band, InterpolatorSpec, NullArray } from "./scroll-math";
 
-export interface PlayerStatus {
+export interface WidgetStatus {
     height: number;
     error?: string;
 }
+
+/** @deprecated Use WidgetStatus */
+export type PlayerStatus = WidgetStatus;
 
 /** Message received from iframe */
 export type PreviewMessage =
@@ -16,15 +19,15 @@ export type PreviewMessage =
         error?: { message?: string; stack?: string };
     }
     | {
-        type: "player-status";
-        players: PlayerStatus[];
+        type: "widget-status";
+        widgets: WidgetStatus[];
     }
     | {
-        type: "player-scroll";
-        playerScrollTop: number;
+        type: "widget-scroll";
+        widgetScrollTop: number;
     }
     | {
-        type: "iframe-ready";
+        type: "runtime-ready";
     };
 
 /** Message sent to iframe */
@@ -44,8 +47,8 @@ export type IframeCommand =
         type: "reflow";
         bandScrollHeight: number;
         bands: NullArray<Band>;
-        playerScrollHeight: number;
-        players: NullArray<Band>;
+        widgetScrollHeight: number;
+        widgets: NullArray<Band>;
         interpolatorSpecs: InterpolatorSpec[];
     }
     | {

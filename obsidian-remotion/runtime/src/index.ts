@@ -2,7 +2,7 @@ export { render } from "remotion-md-runtime";
 export type { RenderComponent, RenderOptions } from "remotion-md-runtime";
 
 // Export shared types and utilities
-export type { IframeCommand, PreviewMessage, PlayerStatus } from "./shared/types";
+export type { IframeCommand, PreviewMessage, WidgetStatus, PlayerStatus } from "./shared/types";
 export type { Band, InterpolatorSpec, NullArray, Viewport, Interpolator } from "./shared/scroll-math";
 export {
     findInterpolatorRegion,

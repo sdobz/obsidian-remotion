@@ -1,182 +1,178 @@
 /**
- * Iframe preview main entry point - Simplified React rendering
- * No Remotion, no Players, no complex state - just React components
+ * Iframe runtime entry point.
+ *
+ * This module is compiled into the "runtime bundle" that iframe.html loads.
+ * It owns:
+ *   - Receiving the `bundle` command → eval user code → render widgets
+ *   - Receiving `reflow`, `scroll`, `reset`, `show-error`, `clear-error` commands
+ *   - Sending `runtime-ready`, `widget-status`, `widget-scroll`, `runtime-error` messages
+ *   - Mounting a React root in #widgets-container
+ *   - Coordinating scroll sync via ScrollCoordinator
+ *   - Drawing band-link overlays via BandsLinksRenderer
+ *
+ * Architecture: single bundle (runtime + user code).
+ * The bootstrap in iframe.html executes this bundle via `new Function(payload)(window)`,
+ * which registers `window.__handleCommand` for subsequent commands and immediately
+ * posts `runtime-ready`.
  */
 
 import type { IframeCommand } from "../shared/types";
 import { BundleManager } from "./bundle";
+import { PlayerManager, type ComponentInfo } from "./players";
+import { OverlayManager } from "./overlays";
+import { ScrollCoordinator } from "./scroll";
+import { BandsLinksRenderer } from "./bands-links";
 
-// Shared DOM elements
-const DOM = {
-  loadingScreen: document.getElementById("loading-screen")!,
-  errorScreen: document.getElementById("error-screen")!,
-  errorTitle: document.getElementById("error-title")!,
-  errorMessage: document.getElementById("error-message")!,
-  debugPanel: document.getElementById("debug-content")!,
-  componentsContainer: document.getElementById("components-container")!,
-};
+// ---------------------------------------------------------------------------
+// DOM references – elements defined in iframe.html
+// ---------------------------------------------------------------------------
+const loadingScreen = document.getElementById("loading-screen") as HTMLElement;
+const widgetsContainer = document.getElementById("widgets-container") as HTMLElement;
+const widgetsScroller = document.getElementById("widgets-scroller") as HTMLElement;
+const bandsContainer = document.getElementById("bands-container") as HTMLElement;
+const linkOverlay = document.getElementById("link-overlay") as SVGSVGElement;
+const debugContent = document.getElementById("debug-content") as HTMLElement;
 
-function sendMessage(msg: any): void {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function sendMessage(msg: unknown): void {
   window.parent.postMessage(msg, "*");
 }
 
-function hideLoading(): void {
-  DOM.loadingScreen.classList.add("hidden");
+function updateDebug(info: Record<string, unknown>): void {
+  if (!debugContent) return;
+  debugContent.innerHTML = Object.entries(info)
+    .map(
+      ([k, v]) =>
+        `<div class="debug-item"><strong>${k}:</strong> <span class="debug-value">${String(v)}</span></div>`,
+    )
+    .join("");
 }
 
-function showError(title: string, message: string): void {
-  DOM.errorTitle.textContent = title;
-  DOM.errorMessage.textContent = message;
-  DOM.errorScreen.classList.remove("hidden");
-  hideLoading();
-}
+// ---------------------------------------------------------------------------
+// Module instances
+// ---------------------------------------------------------------------------
+const overlay = new OverlayManager({ loadingScreen, playersContainer: widgetsContainer });
 
-function clearError(): void {
-  DOM.errorScreen.classList.add("hidden");
-}
+const playerManager = new PlayerManager(
+  { playersContainer: widgetsContainer },
+  sendMessage,
+);
 
-function updateDebug(info: Record<string, any>): void {
-  let html = "";
-  for (const [key, value] of Object.entries(info)) {
-    const valueStr = typeof value === "string" ? value : JSON.stringify(value);
-    html += `<div class="debug-item"><strong>${key}:</strong> <span class="debug-value">${escapeHtml(valueStr)}</span></div>`;
-  }
-  DOM.debugPanel.innerHTML = html;
-}
-
-function escapeHtml(text: string): string {
-  const map: Record<string, string> = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  };
-  return text.replace(/[&<>"']/g, (char) => map[char]);
-}
-
-function renderComponents(components: any[]): void {
-  DOM.componentsContainer.innerHTML = "";
-
-  if (components.length === 0) {
-    DOM.componentsContainer.innerHTML = '<div style="color: #666; padding: 20px;">No components to render</div>';
-    return;
-  }
-
-  for (const comp of components) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "component-item";
-    wrapper.innerHTML = `
-      <div class="component-title">Component: ${escapeHtml(comp.exportName)}</div>
-      <div class="component-root" id="component-${escapeHtml(comp.exportName)}"></div>
-    `;
-    DOM.componentsContainer.appendChild(wrapper);
-  }
-
-  // Try to render components with React
-  tryRenderComponents(components);
-}
-
-async function tryRenderComponents(components: any[]): Promise<void> {
-  try {
-    // Check if React is available
-    const React = (window as any).React;
-    const ReactDOM = (window as any).ReactDOM;
-
-    if (!React || !ReactDOM) {
-      updateDebug({
-        "Status": "React not found in bundle",
-        "React": !!React,
-        "ReactDOM": !!ReactDOM,
-      });
-      return;
-    }
-
-    updateDebug({
-      "Status": "Rendering components",
-      "Component count": components.length,
-    });
-
-    for (const comp of components) {
-      const container = document.getElementById(`component-${comp.exportName}`);
-      if (!container) continue;
-
-      try {
-        // Create a wrapper to call the component as a function
-        const element = React.createElement(comp.component);
-        ReactDOM.createRoot(container).render(element);
-      } catch (e) {
-        container.innerHTML = `<div style="color: #f00;">Error rendering component: ${escapeHtml((e as any).message || String(e))}</div>`;
-      }
-    }
-  } catch (e) {
-    const msg = (e as any).message || String(e);
-    updateDebug({
-      "Status": "Error during render",
-      "Error": msg,
-    });
-  }
-}
-
-// Bundle manager instance
-const bundle = new BundleManager();
-
-function handleBundle(code: string): void {
-  try {
-    const sequence = bundle.loadBundle(code, (message, stack) => {
-      showError("Bundle Error", `${message}\n\n${stack}`);
-      sendMessage({ type: "runtime-error", error: { message, stack } });
-    });
-
-    const components = (sequence?.scenes ?? []).map((scene) => ({
-      exportName: scene.id,
-      component: scene.component,
-      options: scene.options,
-    }));
-
-    if (!components || components.length === 0) {
-      clearError();
-      renderComponents([]);
-      updateDebug({
-        "Status": "Bundle loaded",
-        "Components": "0",
-      });
-    } else {
-      clearError();
-      renderComponents(components);
-      updateDebug({
-        "Status": "Bundle loaded",
-        "Components": components.length.toString(),
-        "Names": components.map((c: any) => c.exportName).join(", "),
-      });
-      sendMessage({ type: "bundle-ready", componentCount: components.length });
-    }
-  } catch (err) {
-    const message = (err as any).message || String(err);
-    const stack = (err as any).stack || "";
-    showError("Bundle Execution Error", `${message}\n\n${stack}`);
-    sendMessage({ type: "runtime-error", error: { message, stack } });
-  }
-
-  hideLoading();
-}
-
-// Message handler
-function onMessage(event: MessageEvent): void {
-  const cmd = event.data as IframeCommand;
-
-  if (cmd.type === "bundle") {
-    handleBundle(cmd.payload);
-  }
-}
-
-// Set up message listener
-window.addEventListener("message", onMessage);
-
-// Initial state
-updateDebug({
-  "Status": "Ready",
-  "Waiting for": "bundle",
+const bandsLinks = new BandsLinksRenderer({
+  bandsContainer,
+  linkOverlay,
 });
 
+const scrollCoordinator = new ScrollCoordinator(
+  { bandScroller: bandsContainer, playerScroller: widgetsScroller },
+  (widgetScrollTop: number) => sendMessage({ type: "widget-scroll", widgetScrollTop }),
+  () => {
+    const { bandScrollTop, playerScrollTop } = scrollCoordinator.scrollPositions;
+    bandsLinks.renderLinks(playerManager.playerPositions, bandScrollTop, playerScrollTop);
+  },
+);
+
+const bundleManager = new BundleManager();
+
+// ---------------------------------------------------------------------------
+// Bundle execution
+// ---------------------------------------------------------------------------
+function handleBundle(payload: string): void {
+  overlay.clearError();
+  bundleManager.reset();
+
+  const sequence = bundleManager.loadBundle(payload, (message, stack) => {
+    overlay.showError(message, stack);
+    sendMessage({ type: "runtime-error", error: { message, stack } });
+  });
+
+  const components: ComponentInfo[] = (sequence?.scenes ?? []).map((scene) => ({
+    exportName: scene.id,
+    component: scene.component,
+  }));
+
+  if (components.length === 0) {
+    playerManager.reset();
+    overlay.renderEmptyState();
+    updateDebug({ status: "bundle loaded", components: 0 });
+  } else {
+    playerManager.renderAll(components);
+    bandsLinks.renderBands(playerManager.playerPositions);
+    playerManager.scheduleUpdate();
+    updateDebug({
+      status: "bundle loaded",
+      components: components.length,
+      names: components.map((c) => c.exportName).join(", "),
+    });
+  }
+
+  overlay.hideLoading();
+}
+
+// ---------------------------------------------------------------------------
+// Command dispatch – registered on window so iframe.html bootstrap can call it
+// ---------------------------------------------------------------------------
+function handleCommand(cmd: IframeCommand): void {
+  switch (cmd.type) {
+    case "bundle":
+      handleBundle(cmd.payload);
+      break;
+
+    case "reflow": {
+      const { bandScrollHeight, bands, widgetScrollHeight, widgets, interpolatorSpecs } = cmd;
+      scrollCoordinator.updateInterpolators(interpolatorSpecs);
+      playerManager.handleReflow(widgets, bundleManager.sequence);
+      bandsLinks.renderBands(bands);
+      const { bandScrollTop, playerScrollTop } = scrollCoordinator.scrollPositions;
+      bandsLinks.renderLinks(widgets, bandScrollTop, playerScrollTop);
+      updateDebug({
+        status: "reflowed",
+        bands: bands.filter(Boolean).length,
+        widgets: widgets.filter(Boolean).length,
+        bandScrollHeight,
+        widgetScrollHeight,
+      });
+      break;
+    }
+
+    case "scroll":
+      scrollCoordinator.scrollTo(cmd.editorScrollTop);
+      break;
+
+    case "reset":
+      bundleManager.reset();
+      playerManager.reset();
+      bandsLinks.reset();
+      scrollCoordinator.reset();
+      overlay.reset();
+      updateDebug({ status: "reset" });
+      break;
+
+    case "show-error":
+      overlay.showError(cmd.message, cmd.stack ?? "");
+      break;
+
+    case "clear-error":
+      overlay.clearError();
+      break;
+  }
+}
+
+// Expose to bootstrap script in iframe.html
+(window as any).__handleCommand = handleCommand;
+
+// Debug dump for test inspection
+(window as any).__dumpRuntimeState = () => ({
+  previewComponents: (window as any).__previewComponents?.length ?? 0,
+  widgetDomCount: widgetsContainer.children.length,
+  loadingHidden: loadingScreen.classList.contains("hidden"),
+  errorVisible: !!(document.getElementById("error-overlay") as any)?.classList.contains("visible"),
+});
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+updateDebug({ status: "ready", waitingFor: "bundle" });
 sendMessage({ type: "runtime-ready" });

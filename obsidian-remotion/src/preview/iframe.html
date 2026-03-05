@@ -16,6 +16,9 @@
             font-family: monospace;
         }
 
+        /* ------------------------------------------------------------------ */
+        /* Debug panel                                                          */
+        /* ------------------------------------------------------------------ */
         #debug-panel {
             position: absolute;
             left: 0;
@@ -46,14 +49,55 @@
             word-break: break-all;
         }
 
-        #widgets-scroller {
+        /* ------------------------------------------------------------------ */
+        /* Main layout: band scroller (left) + widget scroller (right)         */
+        /* ------------------------------------------------------------------ */
+        #layout {
             position: absolute;
             left: 0;
             right: 0;
             top: 141px;
             bottom: 0;
+            display: flex;
+        }
+
+        /* Thin left strip that mirrors editor scroll for band-link anchoring */
+        #bands-scroller {
+            width: 12px;
+            overflow: hidden;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        #bands-container {
+            position: relative;
+            width: 100%;
+        }
+
+        .preview-band {
+            position: absolute;
+            left: 0;
+            right: 0;
+            background: rgba(59, 130, 246, 0.12);
+            border-left: 2px solid rgba(59, 130, 246, 0.5);
+        }
+
+        /* SVG overlay for band-link polygons */
+        #link-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: visible;
+        }
+
+        /* Widget scroller – takes up remaining space */
+        #widgets-scroller {
+            flex: 1;
             overflow: auto;
-            padding: 12px;
+            position: relative;
         }
 
         #widgets-container {
@@ -69,19 +113,9 @@
             background: rgba(255, 255, 255, 0.04);
         }
 
-        .widget-title {
-            color: #0f0;
-            font-weight: bold;
-            margin-bottom: 8px;
-        }
-
-        .widget-meta {
-            font-size: 12px;
-            color: #aaa;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
+        /* ------------------------------------------------------------------ */
+        /* Loading screen                                                       */
+        /* ------------------------------------------------------------------ */
         #loading-screen {
             position: absolute;
             inset: 0;
@@ -96,6 +130,9 @@
             display: none;
         }
 
+        /* ------------------------------------------------------------------ */
+        /* Error overlay                                                        */
+        /* ------------------------------------------------------------------ */
         #error-overlay {
             position: absolute;
             inset: 0;
@@ -136,15 +173,250 @@
         .hidden {
             display: none;
         }
-
-        .component-root {
-            background: white;
-            color: black;
-            padding: 8px;
-            border-radius: 2px;
-            min-height: 40px;
-        }
     </style>
+</head>
+
+<body>
+    <div id="loading-screen">
+        <div>Loading...</div>
+    </div>
+
+    <div id="error-overlay">
+        <div id="error-content">
+            <div id="error-title">Runtime Error</div>
+            <div id="error-message"></div>
+        </div>
+    </div>
+
+    <div id="debug-panel">
+        <div id="debug-title">Debug Info</div>
+        <div id="debug-content"></div>
+    </div>
+
+    <div id="layout">
+        <!-- Left: thin band scroller + SVG link overlay -->
+        <div id="bands-scroller">
+            <div id="bands-container"></div>
+            <svg id="link-overlay"></svg>
+        </div>
+
+        <!-- Right: widget scroller -->
+        <div id="widgets-scroller">
+            <div id="widgets-container"></div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Bootstrap script – minimal by design.
+         *
+         * Responsibilities:
+         *   1. Queue commands that arrive before the runtime bundle is loaded.
+         *   2. On the first `bundle` command: eval the payload (the compiled
+         *      runtime bundle), which registers `window.__handleCommand`.
+         *   3. Replay any queued commands, then route all future commands
+         *      directly to `window.__handleCommand`.
+         *   4. Signal `runtime-ready` immediately so the host knows we are
+         *      alive (the runtime bundle is sent as the first `bundle` command).
+         *
+         * The runtime bundle (obsidian-remotion-runtime compiled entry point)
+         * handles all real logic: React rendering, scroll sync, band-links, etc.
+         */
+        (function () {
+            var pendingCommands = [];
+            var runtimeLoaded = false;
+
+            function sendMessage(msg) {
+                window.parent.postMessage(msg, "*");
+            }
+
+            function dispatch(command) {
+                if (runtimeLoaded && window.__handleCommand) {
+                    window.__handleCommand(command);
+                } else {
+                    pendingCommands.push(command);
+                }
+            }
+
+            window.addEventListener("message", function (event) {
+                var command = event.data;
+                if (!command || typeof command !== "object" || !command.type) return;
+
+                if (command.type === "bundle" && !runtimeLoaded) {
+                    // First bundle command loads the runtime+user bundle
+                    try {
+                        // Execute the bundle in the window scope so it can set
+                        // window.__handleCommand and access DOM APIs.
+                        // eslint-disable-next-line no-new-func
+                        var fn = new Function(command.payload);
+                        fn();
+                        runtimeLoaded = true;
+
+                        // Replay any commands that arrived before the runtime was ready
+                        var queued = pendingCommands.splice(0);
+                        for (var i = 0; i < queued.length; i++) {
+                            if (window.__handleCommand) window.__handleCommand(queued[i]);
+                        }
+                    } catch (err) {
+                        sendMessage({
+                            type: "runtime-error",
+                            error: {
+                                message: err && err.message ? err.message : String(err),
+                                stack: err && err.stack ? err.stack : ""
+                            }
+                        });
+                    }
+                } else {
+                    dispatch(command);
+                }
+            });
+
+            // Signal that the bootstrap is alive.
+            // The host will send the runtime bundle as the first `bundle` command.
+            sendMessage({ type: "runtime-ready" });
+        })();
+    </script>
+</body>
+
+</html>
+
+width: 100%;
+height: 100%;
+overflow: hidden;
+background: #1a1a1a;
+color: #fff;
+font-family: monospace;
+}
+
+#debug-panel {
+position: absolute;
+left: 0;
+right: 0;
+top: 0;
+background: #0a0a0a;
+border-bottom: 1px solid #333;
+padding: 12px;
+max-height: 140px;
+overflow-y: auto;
+z-index: 10;
+}
+
+#debug-title {
+font-weight: bold;
+margin-bottom: 8px;
+color: #0f0;
+}
+
+.debug-item {
+font-size: 12px;
+margin: 4px 0;
+color: #aaa;
+}
+
+.debug-value {
+color: #0f0;
+word-break: break-all;
+}
+
+#widgets-scroller {
+position: absolute;
+left: 0;
+right: 0;
+top: 141px;
+bottom: 0;
+overflow: auto;
+padding: 12px;
+}
+
+#widgets-container {
+position: relative;
+min-height: 100%;
+}
+
+.widget-item {
+margin-bottom: 20px;
+border: 1px solid #333;
+padding: 12px;
+border-radius: 4px;
+background: rgba(255, 255, 255, 0.04);
+}
+
+.widget-title {
+color: #0f0;
+font-weight: bold;
+margin-bottom: 8px;
+}
+
+.widget-meta {
+font-size: 12px;
+color: #aaa;
+white-space: pre-wrap;
+word-break: break-word;
+}
+
+#loading-screen {
+position: absolute;
+inset: 0;
+display: flex;
+align-items: center;
+justify-content: center;
+background: #1a1a1a;
+z-index: 5000;
+}
+
+#loading-screen.hidden {
+display: none;
+}
+
+#error-overlay {
+position: absolute;
+inset: 0;
+display: none;
+align-items: center;
+justify-content: center;
+background: rgba(0, 0, 0, 0.85);
+z-index: 6000;
+padding: 24px;
+}
+
+#error-overlay.visible {
+display: flex;
+}
+
+#error-content {
+max-width: 800px;
+width: 100%;
+background: #2a1111;
+border: 1px solid #8a3030;
+border-radius: 6px;
+padding: 14px;
+}
+
+#error-title {
+color: #ff8f8f;
+font-weight: 700;
+margin-bottom: 8px;
+}
+
+#error-message {
+font-size: 12px;
+color: #ffd4d4;
+white-space: pre-wrap;
+word-break: break-word;
+}
+
+.hidden {
+display: none;
+}
+
+.component-root {
+background: white;
+color: black;
+padding: 8px;
+border-radius: 2px;
+min-height: 40px;
+}
+</style>
 </head>
 
 <body>

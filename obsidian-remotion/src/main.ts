@@ -233,7 +233,7 @@ export default class RemotionPlugin extends Plugin {
     // Update preview with bundle code
     if (bundleResult) {
       await previewView.updateBundleOutput(bundleResult.bundleCode);
-      this.scrollManager?.handlePreviewSpans(typecheckResult.previewLocations);
+      this.scrollManager?.handleWidgetSpans(typecheckResult.widgetSpans);
 
       if (bundleResult.bundleStatus.status === "error" && bundleResult.bundleStatus.error) {
         previewView.showErrorOverlay(bundleResult.bundleStatus.error);
