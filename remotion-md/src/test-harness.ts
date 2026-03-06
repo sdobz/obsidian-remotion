@@ -472,6 +472,44 @@ import * as React from 'react';
 export function render(component: React.ReactElement, options: any): void;
 `,
         );
+
+        // Install obsidian-remotion-runtime stub
+        this.vault.mkdir("node_modules/obsidian-remotion-runtime");
+        this.vault.mkfile(
+            "node_modules/obsidian-remotion-runtime/package.json",
+            JSON.stringify({
+                name: "obsidian-remotion-runtime",
+                version: "0.1.0-stub",
+                main: "index.js",
+                types: "index.d.ts",
+                exports: {
+                    ".": "./index.js",
+                    "./iframe": "./iframe.js"
+                }
+            }),
+        );
+        this.vault.mkfile(
+            "node_modules/obsidian-remotion-runtime/index.js",
+            `
+// Runtime stub - minimal exports
+`,
+        );
+        this.vault.mkfile(
+            "node_modules/obsidian-remotion-runtime/index.d.ts",
+            `
+// Runtime type definitions stub
+`,
+        );
+        this.vault.mkfile(
+            "node_modules/obsidian-remotion-runtime/iframe.js",
+            `
+// Iframe runtime stub - registers global handlers
+if (typeof globalThis !== 'undefined') {
+    globalThis.__previewComponents = [];
+    globalThis.__previewOptions = [];
+}
+`,
+        );
     }
 
     /**

@@ -40,6 +40,7 @@ const First = () => <Title>Hello Remotion</Title>;
 const Second = () => <Title>Another Title?</Title>;
 
 render(() => <Player component={First} />);
+
 render(() => <Player component={Second} />);
 
 const SequenceRoot = () => (
