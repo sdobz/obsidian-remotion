@@ -10,6 +10,7 @@ const DEFAULT_PLAYER_OPTIONS: Partial<PlayerProps> = {
   controls: true,
   loop: false,
   autoPlay: false,
+  acknowledgeRemotionLicense: true,
 };
 
 export const Player = (props: PlayerProps) => {

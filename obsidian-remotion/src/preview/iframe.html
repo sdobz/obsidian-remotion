@@ -39,7 +39,9 @@
             list-style: none;
         }
 
-        #debug-panel summary::-webkit-details-marker { display: none; }
+        #debug-panel summary::-webkit-details-marker {
+            display: none;
+        }
 
         #debug-body {
             margin-top: 4px;
@@ -51,8 +53,13 @@
             color: #aaa;
         }
 
-        .debug-item { margin: 3px 0; }
-        .debug-value { color: #0f0; }
+        .debug-item {
+            margin: 3px 0;
+        }
+
+        .debug-value {
+            color: #0f0;
+        }
 
         /* ------------------------------------------------------------------ */
         /* Main layout: fills entire viewport                                  */
@@ -117,7 +124,9 @@
             z-index: 5000;
         }
 
-        #loading-screen.hidden { display: none; }
+        #loading-screen.hidden {
+            display: none;
+        }
 
         /* ------------------------------------------------------------------ */
         /* Error overlay                                                        */
@@ -133,7 +142,9 @@
             padding: 24px;
         }
 
-        #error-overlay.visible { display: flex; }
+        #error-overlay.visible {
+            display: flex;
+        }
 
         #error-content {
             max-width: 800px;
@@ -160,7 +171,9 @@
 </head>
 
 <body>
-    <div id="loading-screen"><div>Loading…</div></div>
+    <div id="loading-screen">
+        <div>Loading…</div>
+    </div>
 
     <div id="error-overlay">
         <div id="error-content">
@@ -282,4 +295,3 @@
 </body>
 
 </html>
-

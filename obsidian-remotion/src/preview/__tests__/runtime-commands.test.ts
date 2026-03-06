@@ -183,6 +183,36 @@ render(C${i}, { width: 1920, height: 1080, fps: 30, durationInFrames: 60 });`).j
         expect(ctx.runtimeErrors).toHaveLength(0);
     });
 
+    it("reset before first bundle still renders bundle components", async () => {
+        const result = await bundleMarkdown({
+            markdown: `
+\`\`\`tsx
+import React from "react";
+import { render } from "obsidian-remotion-runtime";
+
+const BasicScene = () => <div>Basic scene</div>;
+render(BasicScene, { width: 1920, height: 1080, fps: 30, durationInFrames: 60 });
+\`\`\`
+`,
+            esbuildInstance,
+            examplesDir,
+        });
+        expect(result.bundleStatus.status).toBe("ok");
+
+        // Mirrors Obsidian flow where reset can arrive before the first bundle.
+        // iframe.html queues non-bundle commands until runtimeLoaded.
+        ctx.runtime.reset();
+
+        ctx.runtime.updateBundle(result.bundleCode);
+        await ctx.waitFor("widget-status", 5000);
+
+        expect(ctx.runtimeErrors).toHaveLength(0);
+        expect(ctx.widgetStatuses.length).toBeGreaterThan(0);
+
+        const widgetsContainer = ctx.runtime.getIframe()!.contentDocument!.getElementById("widgets-container")!;
+        expect(widgetsContainer.querySelectorAll("[data-component-name]").length).toBe(1);
+    });
+
     // -----------------------------------------------------------------------
     // Commands that require __handleCommand (need a bundle loaded first)
     // -----------------------------------------------------------------------
