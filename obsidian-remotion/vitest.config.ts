@@ -7,7 +7,6 @@ export default defineConfig({
         environment: "node",
         environmentMatchGlobs: [
             ["src/preview/__tests__/runtime.test.ts", "jsdom"],
-            ["src/preview/__tests__/runtime-commands.test.ts", "jsdom"],
         ],
         environmentOptions: {
             jsdom: {

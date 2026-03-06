@@ -16,9 +16,6 @@
             font-family: monospace;
         }
 
-        /* ------------------------------------------------------------------ */
-        /* Debug panel                                                          */
-        /* ------------------------------------------------------------------ */
         #debug-panel {
             position: absolute;
             left: 0;
@@ -49,9 +46,6 @@
             word-break: break-all;
         }
 
-        /* ------------------------------------------------------------------ */
-        /* Main layout: band scroller (left) + widget scroller (right)         */
-        /* ------------------------------------------------------------------ */
         #layout {
             position: absolute;
             left: 0;
@@ -61,7 +55,6 @@
             display: flex;
         }
 
-        /* Thin left strip that mirrors editor scroll for band-link anchoring */
         #bands-scroller {
             width: 12px;
             overflow: hidden;
@@ -82,7 +75,6 @@
             border-left: 2px solid rgba(59, 130, 246, 0.5);
         }
 
-        /* SVG overlay for band-link polygons */
         #link-overlay {
             position: absolute;
             top: 0;
@@ -93,7 +85,6 @@
             overflow: visible;
         }
 
-        /* Widget scroller – takes up remaining space */
         #widgets-scroller {
             flex: 1;
             overflow: auto;
@@ -113,9 +104,27 @@
             background: rgba(255, 255, 255, 0.04);
         }
 
-        /* ------------------------------------------------------------------ */
-        /* Loading screen                                                       */
-        /* ------------------------------------------------------------------ */
+        .widget-title {
+            color: #0f0;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .widget-meta {
+            font-size: 12px;
+            color: #aaa;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .component-root {
+            background: white;
+            color: black;
+            padding: 8px;
+            border-radius: 2px;
+            min-height: 40px;
+        }
+
         #loading-screen {
             position: absolute;
             inset: 0;
@@ -130,9 +139,6 @@
             display: none;
         }
 
-        /* ------------------------------------------------------------------ */
-        /* Error overlay                                                        */
-        /* ------------------------------------------------------------------ */
         #error-overlay {
             position: absolute;
             inset: 0;
@@ -194,13 +200,10 @@
     </div>
 
     <div id="layout">
-        <!-- Left: thin band scroller + SVG link overlay -->
         <div id="bands-scroller">
             <div id="bands-container"></div>
             <svg id="link-overlay"></svg>
         </div>
-
-        <!-- Right: widget scroller -->
         <div id="widgets-scroller">
             <div id="widgets-container"></div>
         </div>
@@ -208,294 +211,145 @@
 
     <script>
         /**
-         * Bootstrap script – minimal by design.
+         * Bootstrap + default runtime.
          *
-         * Responsibilities:
-         *   1. Queue commands that arrive before the runtime bundle is loaded.
-         *   2. On the first `bundle` command: eval the payload (the compiled
-         *      runtime bundle), which registers `window.__handleCommand`.
-         *   3. Replay any queued commands, then route all future commands
-         *      directly to `window.__handleCommand`.
-         *   4. Signal `runtime-ready` immediately so the host knows we are
-         *      alive (the runtime bundle is sent as the first `bundle` command).
+         * Architecture:
+         *   - Provides a working default __handleCommand that reads
+         *     window.__previewComponents / __previewOptions populated by
+         *     render() calls in user bundles.
+         *   - An optional enhanced runtime compiled into the user bundle may
+         *     replace window.__handleCommand when it evaluates.
+         *   - All IframeCommands are routed through window.__handleCommand so
+         *     the enhanced runtime can intercept any command type.
          *
-         * The runtime bundle (obsidian-remotion-runtime compiled entry point)
-         * handles all real logic: React rendering, scroll sync, band-links, etc.
+         * Command protocol (IframeCommand types):
+         *   bundle     – eval user bundle, render registered components
+         *   reflow     – update scroll interpolators and widget positions
+         *   scroll     – sync editor scroll position
+         *   reset      – clear all rendered content
+         *   show-error – display error overlay
+         *   clear-error– hide error overlay
+         *
+         * Outgoing messages (PreviewMessage types):
+         *   runtime-ready  – iframe is alive (sent at boot)
+         *   widget-status  – array of {height} after each bundle render
+         *   widget-scroll  – iframe scroll position changed
+         *   runtime-error  – bundle evaluation threw an error
          */
         (function () {
-            var pendingCommands = [];
-            var runtimeLoaded = false;
-
-            function sendMessage(msg) {
+            var sendMessage = function (msg) {
                 window.parent.postMessage(msg, "*");
-            }
-
-            function dispatch(command) {
-                if (runtimeLoaded && window.__handleCommand) {
-                    window.__handleCommand(command);
-                } else {
-                    pendingCommands.push(command);
-                }
-            }
-
-            window.addEventListener("message", function (event) {
-                var command = event.data;
-                if (!command || typeof command !== "object" || !command.type) return;
-
-                if (command.type === "bundle" && !runtimeLoaded) {
-                    // First bundle command loads the runtime+user bundle
-                    try {
-                        // Execute the bundle in the window scope so it can set
-                        // window.__handleCommand and access DOM APIs.
-                        // eslint-disable-next-line no-new-func
-                        var fn = new Function(command.payload);
-                        fn();
-                        runtimeLoaded = true;
-
-                        // Replay any commands that arrived before the runtime was ready
-                        var queued = pendingCommands.splice(0);
-                        for (var i = 0; i < queued.length; i++) {
-                            if (window.__handleCommand) window.__handleCommand(queued[i]);
-                        }
-                    } catch (err) {
-                        sendMessage({
-                            type: "runtime-error",
-                            error: {
-                                message: err && err.message ? err.message : String(err),
-                                stack: err && err.stack ? err.stack : ""
-                            }
-                        });
-                    }
-                } else {
-                    dispatch(command);
-                }
-            });
-
-            // Signal that the bootstrap is alive.
-            // The host will send the runtime bundle as the first `bundle` command.
-            sendMessage({ type: "runtime-ready" });
-        })();
-    </script>
-</body>
-
-</html>
-
-width: 100%;
-height: 100%;
-overflow: hidden;
-background: #1a1a1a;
-color: #fff;
-font-family: monospace;
-}
-
-#debug-panel {
-position: absolute;
-left: 0;
-right: 0;
-top: 0;
-background: #0a0a0a;
-border-bottom: 1px solid #333;
-padding: 12px;
-max-height: 140px;
-overflow-y: auto;
-z-index: 10;
-}
-
-#debug-title {
-font-weight: bold;
-margin-bottom: 8px;
-color: #0f0;
-}
-
-.debug-item {
-font-size: 12px;
-margin: 4px 0;
-color: #aaa;
-}
-
-.debug-value {
-color: #0f0;
-word-break: break-all;
-}
-
-#widgets-scroller {
-position: absolute;
-left: 0;
-right: 0;
-top: 141px;
-bottom: 0;
-overflow: auto;
-padding: 12px;
-}
-
-#widgets-container {
-position: relative;
-min-height: 100%;
-}
-
-.widget-item {
-margin-bottom: 20px;
-border: 1px solid #333;
-padding: 12px;
-border-radius: 4px;
-background: rgba(255, 255, 255, 0.04);
-}
-
-.widget-title {
-color: #0f0;
-font-weight: bold;
-margin-bottom: 8px;
-}
-
-.widget-meta {
-font-size: 12px;
-color: #aaa;
-white-space: pre-wrap;
-word-break: break-word;
-}
-
-#loading-screen {
-position: absolute;
-inset: 0;
-display: flex;
-align-items: center;
-justify-content: center;
-background: #1a1a1a;
-z-index: 5000;
-}
-
-#loading-screen.hidden {
-display: none;
-}
-
-#error-overlay {
-position: absolute;
-inset: 0;
-display: none;
-align-items: center;
-justify-content: center;
-background: rgba(0, 0, 0, 0.85);
-z-index: 6000;
-padding: 24px;
-}
-
-#error-overlay.visible {
-display: flex;
-}
-
-#error-content {
-max-width: 800px;
-width: 100%;
-background: #2a1111;
-border: 1px solid #8a3030;
-border-radius: 6px;
-padding: 14px;
-}
-
-#error-title {
-color: #ff8f8f;
-font-weight: 700;
-margin-bottom: 8px;
-}
-
-#error-message {
-font-size: 12px;
-color: #ffd4d4;
-white-space: pre-wrap;
-word-break: break-word;
-}
-
-.hidden {
-display: none;
-}
-
-.component-root {
-background: white;
-color: black;
-padding: 8px;
-border-radius: 2px;
-min-height: 40px;
-}
-</style>
-</head>
-
-<body>
-    <div id="loading-screen">
-        <div>Loading...</div>
-    </div>
-    <div id="error-overlay">
-        <div id="error-content">
-            <div id="error-title">Runtime Error</div>
-            <div id="error-message"></div>
-        </div>
-    </div>
-    <div id="debug-panel">
-        <div id="debug-title">Debug Info</div>
-        <div id="debug-content"></div>
-    </div>
-    <div id="widgets-scroller">
-        <div id="widgets-container"></div>
-    </div>
-
-    <script>
-        (function () {
-            const sendMessage = (msg) => window.parent.postMessage(msg, "*");
-            const loadingScreen = document.getElementById("loading-screen");
-            const widgetsContainer = document.getElementById("widgets-container");
-            const debugContent = document.getElementById("debug-content");
-            const errorOverlay = document.getElementById("error-overlay");
-            const errorMessage = document.getElementById("error-message");
-
-            const updateDebug = (obj) => {
-                const entries = Object.entries(obj || {});
-                debugContent.innerHTML = entries.map(([k, v]) => (
-                    `<div class="debug-item"><strong>${k}:</strong> <span class="debug-value">${String(v)}</span></div>`
-                )).join("");
             };
 
-            const showError = (message, stack) => {
+            var loadingScreen = document.getElementById("loading-screen");
+            var widgetsContainer = document.getElementById("widgets-container");
+            var debugContent = document.getElementById("debug-content");
+            var errorOverlay = document.getElementById("error-overlay");
+            var errorMessage = document.getElementById("error-message");
+
+            var updateDebug = function (obj) {
+                var html = "";
+                var keys = Object.keys(obj || {});
+                for (var i = 0; i < keys.length; i++) {
+                    html += '<div class="debug-item"><strong>' + keys[i] + ':</strong> <span class="debug-value">' + String(obj[keys[i]]) + '</span></div>';
+                }
+                debugContent.innerHTML = html;
+            };
+
+            var showError = function (message, stack) {
                 errorOverlay.classList.add("visible");
-                errorMessage.textContent = `${message || "Unknown error"}\n\n${stack || ""}`;
+                errorMessage.textContent = (message || "Unknown error") + (stack ? "\n\n" + stack : "");
             };
 
-            const hideError = () => {
+            var hideError = function () {
                 errorOverlay.classList.remove("visible");
                 errorMessage.textContent = "";
             };
 
-            const hideLoading = () => {
+            var hideLoading = function () {
                 loadingScreen.classList.add("hidden");
             };
 
-            const renderRegisteredWidgets = () => {
-                const components = window.__previewComponents || [];
-                const options = window.__previewOptions || [];
+            var renderRegisteredWidgets = function () {
+                var components = window.__previewComponents || [];
+                var options = window.__previewOptions || [];
                 widgetsContainer.innerHTML = "";
-
-                components.forEach((component, index) => {
-                    const item = document.createElement("div");
+                for (var i = 0; i < components.length; i++) {
+                    var item = document.createElement("div");
                     item.className = "widget-item";
-                    item.setAttribute("data-component-index", String(index));
-                    item.innerHTML = `
-                        <div class="widget-title">render() component #${index + 1}</div>
-                        <div class="widget-meta">${JSON.stringify(options[index] || {}, null, 2)}</div>
-                    `;
+                    item.setAttribute("data-component-index", String(i));
+                    item.innerHTML =
+                        '<div class="widget-title">render() component #' + (i + 1) + '</div>' +
+                        '<div class="widget-meta">' + JSON.stringify(options[i] || {}, null, 2) + '</div>';
                     widgetsContainer.appendChild(item);
-                });
-
-                const widgets = Array.from(widgetsContainer.children).map((element) => ({
-                    height: element.offsetHeight || 100,
-                }));
-
-                sendMessage({ type: "widget-status", widgets });
-
+                }
+                var widgets = [];
+                var children = widgetsContainer.children;
+                for (var j = 0; j < children.length; j++) {
+                    widgets.push({ height: children[j].offsetHeight || 100 });
+                }
+                sendMessage({ type: "widget-status", widgets: widgets });
                 updateDebug({
                     registeredComponents: components.length,
                     RuntimeBundleKeys: Object.keys(window.RuntimeBundle || {}).join(", "),
-                    widgetDomCount: widgetsContainer.children.length,
+                    widgetDomCount: widgetsContainer.children.length
                 });
             };
 
+            // Default handler – may be replaced by the runtime bundle
+            window.__handleCommand = function (command) {
+                console.log("[runtime] received command:", command.type);
+
+                if (command.type === "bundle") {
+                    hideError();
+                    window.__previewComponents = [];
+                    window.__previewOptions = [];
+                    try {
+                        // eslint-disable-next-line no-new-func
+                        (new Function(command.payload))();
+                        renderRegisteredWidgets();
+                        hideLoading();
+                    } catch (err) {
+                        hideLoading();
+                        var msg = err && err.message ? err.message : String(err);
+                        var stk = err && err.stack ? err.stack : "";
+                        showError(msg, stk);
+                        sendMessage({ type: "runtime-error", error: { message: msg, stack: stk } });
+                    }
+                    return;
+                }
+
+                if (command.type === "reflow") {
+                    window.__lastReflow = command;
+                    return;
+                }
+
+                if (command.type === "scroll") {
+                    window.__lastScroll = command.editorScrollTop;
+                    return;
+                }
+
+                if (command.type === "reset") {
+                    window.__previewComponents = [];
+                    window.__previewOptions = [];
+                    widgetsContainer.innerHTML = "";
+                    hideError();
+                    updateDebug({ status: "reset" });
+                    return;
+                }
+
+                if (command.type === "show-error") {
+                    showError(command.message, command.stack);
+                    return;
+                }
+
+                if (command.type === "clear-error") {
+                    hideError();
+                    return;
+                }
+            };
+
+            // Debug dump for test inspection
             window.__dumpRuntimeState = function () {
                 return {
                     hasRuntimeBundle: !!window.RuntimeBundle,
@@ -504,63 +358,20 @@ min-height: 40px;
                     widgetDomCount: widgetsContainer.children.length,
                     debugText: debugContent.textContent || "",
                     loadingHidden: loadingScreen.classList.contains("hidden"),
-                    errorVisible: errorOverlay.classList.contains("visible"),
+                    errorVisible: errorOverlay.classList.contains("visible")
                 };
             };
 
-            // Set up message handler for commands from host
-            window.addEventListener("message", (event) => {
-                const command = event.data;
-                if (!command || typeof command !== "object") return;
-
-                // Route commands to runtime handlers
-                if (window.__remoteRuntimeReady && window.__handleCommand) {
+            window.addEventListener("message", function (event) {
+                var command = event.data;
+                if (!command || typeof command !== "object" || !command.type) return;
+                if (window.__handleCommand) {
                     window.__handleCommand(command);
                 }
             });
 
-            // Runtime initialization
-            window.__remoteRuntimeReady = true;
-            window.__remoteRuntime = { modules: {} };
-
-            // This handler is called for commands from the host
-            window.__handleCommand = function (command) {
-                console.log('[runtime] received command:', command.type);
-
-                if (command.type === "bundle") {
-                    try {
-                        hideError();
-
-                        window.__previewComponents = [];
-                        window.__previewOptions = [];
-
-                        const fn = new Function("window", command.payload);
-                        fn(window);
-
-                        renderRegisteredWidgets();
-                        hideLoading();
-                    } catch (error) {
-                        hideLoading();
-                        showError(error?.message ?? "Unknown error", error?.stack ?? "");
-                        sendMessage({
-                            type: "runtime-error",
-                            error: {
-                                message: error?.message ?? "Unknown error",
-                                stack: error?.stack ?? ""
-                            }
-                        });
-                    }
-                }
-            };
-
-            console.log('[runtime] Ready');
-
-            updateDebug({
-                status: "ready",
-                waitingFor: "bundle",
-            });
-
-            // Signal that iframe is ready
+            console.log("[runtime] Ready");
+            updateDebug({ status: "ready", waitingFor: "bundle" });
             sendMessage({ type: "runtime-ready" });
         })();
     </script>
