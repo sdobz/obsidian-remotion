@@ -29,6 +29,7 @@ import { BandsLinksRenderer } from "./bands-links";
 const loadingScreen = document.getElementById("loading-screen") as HTMLElement;
 const widgetsContainer = document.getElementById("widgets-container") as HTMLElement;
 const widgetsScroller = document.getElementById("widgets-scroller") as HTMLElement;
+const bandsScroller = document.getElementById("bands-scroller") as HTMLElement;
 const bandsContainer = document.getElementById("bands-container") as HTMLElement;
 const linkOverlay = document.getElementById("link-overlay") as unknown as SVGSVGElement;
 
@@ -72,7 +73,7 @@ const bandsLinks = new BandsLinksRenderer({
 });
 
 const scrollCoordinator = new ScrollCoordinator(
-  { bandScroller: bandsContainer, playerScroller: widgetsScroller },
+  { bandScroller: bandsScroller, playerScroller: widgetsScroller },
   (widgetScrollTop: number) => sendMessage({ type: "widget-scroll", widgetScrollTop }),
   () => {
     const { bandScrollTop, playerScrollTop } = scrollCoordinator.scrollPositions;
@@ -139,10 +140,18 @@ function handleCommand(cmd: IframeCommand): void {
     case "reflow": {
       const { bandScrollHeight, bands, widgetScrollHeight, widgets, interpolatorSpecs } = cmd;
       scrollCoordinator.updateInterpolators(interpolatorSpecs);
+
+      // Keep scroll content containers sized to the editor-provided scroll ranges.
+      // The scroller viewport height comes from the iframe window, while these
+      // container heights define total scrollable content extent.
+      bandsContainer.style.height = `${bandScrollHeight}px`;
+      widgetsContainer.style.height = `${widgetScrollHeight}px`;
+
       playerManager.handleReflow(widgets, bundleManager.sequence);
       bandsLinks.renderBands(bands);
       const { bandScrollTop, playerScrollTop } = scrollCoordinator.scrollPositions;
-      bandsLinks.renderLinks(widgets, bandScrollTop, playerScrollTop);
+      bandsLinks.renderLinks(playerManager.playerPositions, bandScrollTop, playerScrollTop);
+      playerManager.scheduleUpdate();
       break;
     }
 

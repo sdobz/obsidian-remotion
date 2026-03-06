@@ -264,6 +264,42 @@ render(Comp, { width: 1920, height: 1080, fps: 30, durationInFrames: 60 });
         expect(widgetsContainer.children.length).toBe(0);
     });
 
+    it("scroll command updates #bands-scroller scrollTop", async () => {
+        await loadMinimalBundle();
+
+        const iframeDoc = ctx.runtime.getIframe()!.contentDocument!;
+        const bandsScroller = iframeDoc.getElementById("bands-scroller") as HTMLElement;
+        expect(bandsScroller.scrollTop).toBe(0);
+
+        ctx.runtime.scroll(180);
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        expect(bandsScroller.scrollTop).toBe(180);
+        expect(ctx.runtimeErrors).toHaveLength(0);
+    });
+
+    it("reflow command applies band/widget scroll heights to containers", async () => {
+        await loadMinimalBundle();
+
+        const iframeDoc = ctx.runtime.getIframe()!.contentDocument!;
+        const bandsContainer = iframeDoc.getElementById("bands-container") as HTMLElement;
+        const widgetsContainer = iframeDoc.getElementById("widgets-container") as HTMLElement;
+
+        ctx.runtime.reflow(
+            2400,
+            [],
+            3600,
+            [],
+            [],
+        );
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        expect(bandsContainer.style.height).toBe("2400px");
+        expect(widgetsContainer.style.height).toBe("3600px");
+        expect(ctx.runtimeErrors).toHaveLength(0);
+    });
+
     // -----------------------------------------------------------------------
     // show-error / clear-error commands
     // -----------------------------------------------------------------------
