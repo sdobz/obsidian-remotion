@@ -4,6 +4,7 @@
  */
 
 import React from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { NullArray, Band } from "../shared/scroll-math";
 
@@ -17,20 +18,24 @@ export class PlayerManager {
   private positions: NullArray<Band> = [];
   private previousHeights: number[] = [];
   private hasContent = false;
-  private __root: any = null;
+  private __root: ReturnType<typeof createRoot>;
+  /** The actual div that React owns – a child of DOM.playersContainer. */
+  private __container: HTMLElement;
 
   constructor(
     private DOM: { playersContainer: HTMLElement },
     private sendMessage: (msg: any) => void,
-  ) { }
+  ) {
+    // Remove all previous React containers (from prior bundle evals).
+    // Each eval creates a new container div so React never reuses a container
+    // that was managed by a previous root – this avoids deferred-unmount races.
+    this.DOM.playersContainer.innerHTML = "";
+    this.__container = this.DOM.playersContainer.ownerDocument.createElement("div");
+    this.DOM.playersContainer.appendChild(this.__container);
+    this.__root = createRoot(this.__container);
+  }
 
   renderAll(components: ComponentInfo[]): void {
-    const root = createRoot(this.DOM.playersContainer);
-
-    if (!this.__root) {
-      this.__root = root;
-    }
-
     const nodes = components.map((comp: ComponentInfo, idx: number) => {
       return React.createElement(
         "div",
@@ -48,7 +53,14 @@ export class PlayerManager {
     });
 
     const element = React.createElement(React.Fragment, null, ...nodes);
-    this.__root.render(element);
+    // flushSync forces React to commit the render synchronously so DOM children
+    // are in place immediately (important for scheduleUpdate() and jsdom tests).
+    try {
+      flushSync(() => this.__root.render(element));
+    } catch (_) {
+      // Fallback to async render if flushSync is not allowed (e.g. inside another flush)
+      this.__root.render(element);
+    }
 
     this.hasContent = true;
     this.reposition();
@@ -56,7 +68,7 @@ export class PlayerManager {
 
   reposition(): void {
     const playerElements = Array.from(
-      this.DOM.playersContainer.children,
+      this.__container.children,
     ) as HTMLElement[];
 
     playerElements.forEach((element, index) => {
@@ -79,25 +91,21 @@ export class PlayerManager {
 
   scheduleUpdate(): void {
     setTimeout(() => {
-      const playerElements = Array.from(this.DOM.playersContainer.children);
-      const playerStatuses = playerElements.map((el) => {
-        const bandIndex = parseInt(
-          (el as HTMLElement).getAttribute("data-band-index") || "0",
-          10,
-        );
-        return {
-          index: bandIndex,
-          height: (el as HTMLElement).offsetHeight || 100,
-        };
-      });
+      const playerElements = Array.from(this.__container.children);
+      const heights = playerElements.map(
+        (el) => (el as HTMLElement).offsetHeight || 100,
+      );
 
       const heightsChanged =
-        playerStatuses.length !== this.previousHeights.length ||
-        playerStatuses.some((s, i) => s.height !== this.previousHeights[i]);
+        heights.length !== this.previousHeights.length ||
+        heights.some((h, i) => h !== this.previousHeights[i]);
 
       if (heightsChanged) {
-        this.previousHeights = playerStatuses.map((s) => s.height);
-        this.sendMessage({ type: "widget-status", widgets: playerStatuses });
+        this.previousHeights = heights;
+        this.sendMessage({
+          type: "widget-status",
+          widgets: heights.map((height) => ({ height })),
+        });
       }
     }, 100);
   }
@@ -119,15 +127,16 @@ export class PlayerManager {
   }
 
   reset(): void {
-    if (this.__root) {
-      try {
-        this.__root.unmount();
-      } catch (e) {
-        // Ignore unmount errors
-      }
-      this.__root = null;
+    try {
+      // flushSync forces the unmount to process synchronously, so React fully
+      // tears down the fiber tree before we clear the DOM. Without this, the
+      // deferred unmount work can be picked up by the NEXT flushSync call
+      // (inside renderAll()) and mutate the detached container in a way that
+      // interferes with the new root.
+      flushSync(() => this.__root.unmount());
+    } catch (e) {
+      // ignore errors during reset (e.g. if root was never rendered into)
     }
-
     this.DOM.playersContainer.innerHTML = "";
     this.positions = [];
     this.previousHeights = [];

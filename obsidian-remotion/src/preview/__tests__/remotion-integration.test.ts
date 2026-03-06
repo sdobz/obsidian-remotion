@@ -49,7 +49,7 @@ const MyComp = () => <div>Hello</div>;
 
         const iframe = ctx.runtime.getIframe();
         const widgetsContainer = iframe!.contentDocument!.getElementById("widgets-container");
-        expect(widgetsContainer!.children.length).toBe(0);
+        expect(widgetsContainer!.querySelectorAll("[data-component-name]").length).toBe(0);
 
         await ctx.runtime.unmount();
     });
@@ -79,7 +79,7 @@ render(MyComp, { width: 1920, height: 1080, fps: 30, durationInFrames: 60 });
 
         const iframe = ctx.runtime.getIframe();
         const widgetsContainer = iframe!.contentDocument!.getElementById("widgets-container");
-        expect(widgetsContainer!.children.length).toBe(1);
+        expect(widgetsContainer!.querySelectorAll("[data-component-name]").length).toBe(1);
 
         await ctx.runtime.unmount();
     });
@@ -113,7 +113,7 @@ render(Two, { width: 1280, height: 720, fps: 24, durationInFrames: 90 });
         expect(ctx.runtimeErrors).toHaveLength(0);
         const iframe = ctx.runtime.getIframe();
         const widgetsContainer = iframe!.contentDocument!.getElementById("widgets-container");
-        expect(widgetsContainer!.children.length).toBe(2);
+        expect(widgetsContainer!.querySelectorAll("[data-component-name]").length).toBe(2);
 
         await ctx.runtime.unmount();
     });

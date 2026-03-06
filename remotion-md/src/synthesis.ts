@@ -27,6 +27,11 @@ export function synthesizeVirtualModule(
 ): SynthesizedModule {
   const moduleParts: string[] = [];
 
+  // Preamble: pull in the iframe runtime as a side-effect so it is always
+  // bundled together with user code. This registers window.__handleCommand,
+  // sets up React rendering, scroll sync, and band-link overlays.
+  moduleParts.push('import "obsidian-remotion-runtime/iframe";');
+
   const makeSentinel = (block: ClassifiedBlock) => {
     const line = block.startLine + 1; // 1-based line number in markdown
     return `// --- block ${block.blockIndex} @ ${notePath}:${line} ---`;

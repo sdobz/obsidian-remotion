@@ -1,4 +1,4 @@
-type Scene = {
+export type Scene = {
   id: string;
   component: unknown;
   options?: Record<string, unknown>;
@@ -66,6 +66,10 @@ export class BundleManager {
 
   get sequence(): Sequence | null {
     return this.currentSequence;
+  }
+
+  setSequence(scenes: Scene[]): void {
+    this.currentSequence = scenes.length > 0 ? { scenes } : null;
   }
 
   reset(): void {

@@ -4,6 +4,10 @@
   "description": "Runtime helpers for Obsidian Remotion previews",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./iframe": "./dist/iframe/main.js"
+  },
   "files": [
     "dist"
   ],

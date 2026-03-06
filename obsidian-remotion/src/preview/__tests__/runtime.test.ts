@@ -110,37 +110,32 @@ describe("Runtime", () => {
     });
 
     it("executes posted bundles", async () => {
-        const { delegate, createContainer, window: hostWindow } = createJsdomRuntimeDelegate();
+        const { delegate, createContainer } = createJsdomRuntimeDelegate();
         const runtime = new Runtime(delegate);
         const { handler, waitFor } = createMessageWaiter();
 
-        const widgetStatuses: number[][] = [];
+        const runtimeErrors: Array<{ message: string; stack: string }> = [];
 
         runtime.setHandlers({
-            onRuntimeError: () => { },
-            onWidgetStatus: (heights: number[]) => {
-                widgetStatuses.push(heights);
-                handler({ type: "widget-status", widgets: [] });
+            onRuntimeError: (message: string, stack: string) => {
+                runtimeErrors.push({ message, stack });
+                handler({ type: "runtime-error", error: { message, stack } });
             },
+            onWidgetStatus: () => { },
             onWidgetScroll: () => { },
-            onReady: () => {
-                // Just flag that we're ready, don't need to handler() it
-            },
+            onReady: () => { },
         });
 
         await runtime.mount(createContainer());
 
-        // Execute a bundle
-        runtime.updateBundle("window.RuntimeBundle = { widgets: [{ height: 123 }] };");
-        await waitFor("widget-status");
-
-        // Execute another bundle
-        runtime.updateBundle("window.RuntimeBundle = { widgets: [] };");
-        await waitFor("widget-status");
-
-        expect(widgetStatuses).toHaveLength(2);
-        expect(widgetStatuses[0]).toEqual([]);
-        expect(widgetStatuses[1]).toEqual([]);
+        // A raw JS snippet (no obsidian-remotion-runtime/iframe preamble) will not
+        // register window.__handleCommand. The bootstrap detects this and emits
+        // runtime-error so tests fail loudly when the runtime bundle is broken.
+        runtime.updateBundle("var x = 1; // no __handleCommand registered");
+        const errorMsg = await waitFor("runtime-error", 3000);
+        expect(errorMsg.type).toBe("runtime-error");
+        expect(runtimeErrors).toHaveLength(1);
+        expect(runtimeErrors[0].message).toContain("__handleCommand not registered");
 
         await runtime.unmount();
     });

@@ -2,22 +2,28 @@
  * @vitest-environment node
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
     initializeEsbuild,
     setupRuntimeTest,
     bundleMarkdown,
-    executeBundle,
+    type RuntimeTestContext,
 } from "./test-utils";
 
 describe("esbuild Bundling Integration", () => {
     let esbuildInstance: any;
     let examplesDir: string;
+    let ctx: RuntimeTestContext;
 
-    beforeEach(() => {
+    beforeEach(async () => {
         const result = initializeEsbuild();
         esbuildInstance = result.esbuildInstance;
         examplesDir = result.examplesDir;
+        ctx = await setupRuntimeTest();
+    });
+
+    afterEach(async () => {
+        await ctx.runtime.unmount();
     });
 
     it("loads esbuild from node_modules", () => {
@@ -26,13 +32,17 @@ describe("esbuild Bundling Integration", () => {
     });
 
     it("bundles and executes markdown through Runtime (matching Obsidian flow)", async () => {
+        // This bundle has no render() calls, so __handleCommand is registered but
+        // handleBundle() finds no components → no widget-status is emitted.
+        // We verify the runtime loaded successfully (no runtime-error) and that
+        // __handleCommand is now available in the iframe window.
         const markdown = `
 \`\`\`tsx
+import React from "react";
 export const MyComponent = () => <div>Hello from Bundle</div>;
 \`\`\`
 `;
 
-        // Step 1: Bundle in Node environment (matches main.ts bundle() method)
         const result = await bundleMarkdown({
             markdown,
             esbuildInstance,
@@ -42,43 +52,41 @@ export const MyComponent = () => <div>Hello from Bundle</div>;
         expect(result.bundleStatus.status).toBe("ok");
         expect(result.bundleCode).toBeTruthy();
 
-        // Step 2: Execute bundle through Runtime (matches PreviewView.updateBundleOutput)
-        const ctx = await setupRuntimeTest();
+        ctx.runtime.updateBundle(result.bundleCode);
+        // Give the IIFE time to eval and register __handleCommand
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        const executeResult = await executeBundle(ctx, result.bundleCode);
-
-        if (!executeResult.success) {
-            console.error("Runtime error:", executeResult.error);
-            throw new Error(`Bundle execution failed: ${executeResult.error?.message}`);
-        }
-
-        expect(executeResult.success).toBe(true);
         expect(ctx.runtimeErrors).toHaveLength(0);
 
-        // Verify bundle executed and set window.RuntimeBundle in iframe
-        const iframeWindow = ctx.runtime.getContentWindow();
-        expect(iframeWindow).toBeTruthy();
-        expect((iframeWindow as any).RuntimeBundle).toBeDefined();
-        expect((iframeWindow as any).RuntimeBundle.MyComponent).toBeDefined();
-
-        await ctx.runtime.unmount();
+        // __handleCommand is registered by obsidian-remotion-runtime/iframe preamble
+        const iframeWindow = ctx.runtime.getContentWindow() as any;
+        expect(typeof iframeWindow.__handleCommand).toBe("function");
+        // No render() calls → no components registered
+        expect(iframeWindow.__dumpRuntimeState?.()?.previewComponents ?? 0).toBe(0);
     });
 
     it("resolves React and remotion dependencies through complete flow", async () => {
-        // Create markdown that imports React and remotion
+        // Uses render() so widget-status will be emitted.
+        // Imports from remotion to verify the dependency chain resolves correctly.
+        // Avoids hooks that require Remotion composition context (e.g. useCurrentFrame,
+        // useVideoConfig) – those throw when rendered outside a <Composition>.
         const markdown = `
 \`\`\`tsx
 import React from "react";
-import { useCurrentFrame } from "remotion";
+import { render } from "obsidian-remotion-runtime";
+// Import a non-hook export from remotion to verify dep resolution
+import { interpolate } from "remotion";
 
-export const TestComponent = () => {
-  const frame = useCurrentFrame();
-  return React.createElement('div', null, 'Frame: ' + frame);
+const TestComponent = () => {
+  // Use interpolate (a pure function) to verify remotion is usable
+  const opacity = interpolate(0, [0, 30], [0, 1]);
+  return <div style={{ opacity }}>Remotion deps resolved</div>;
 };
+
+render(TestComponent, { width: 1920, height: 1080, fps: 30, durationInFrames: 60 });
 \`\`\`
 `;
 
-        // Step 1: Bundle in Node environment
         const result = await bundleMarkdown({
             markdown,
             esbuildInstance,
@@ -88,26 +96,15 @@ export const TestComponent = () => {
         expect(result.bundleStatus.status).toBe("ok");
         expect(result.bundleCode).toBeTruthy();
 
-        // Step 2: Execute through Runtime
-        const ctx = await setupRuntimeTest();
+        ctx.runtime.updateBundle(result.bundleCode);
+        await ctx.waitFor("widget-status", 10000);
 
-        const executeResult = await executeBundle(ctx, result.bundleCode);
-
-        if (!executeResult.success) {
-            console.error("Runtime error:", executeResult.error);
-            throw new Error(`Dependency resolution failed: ${executeResult.error?.message}`);
-        }
-
-        expect(executeResult.success).toBe(true);
         expect(ctx.runtimeErrors).toHaveLength(0);
+        expect(ctx.widgetStatuses.length).toBeGreaterThan(0);
 
-        // Verify the bundle executed correctly in the iframe
-        const iframeWindow = ctx.runtime.getContentWindow();
-        expect(iframeWindow).toBeTruthy();
-        expect((iframeWindow as any).RuntimeBundle).toBeDefined();
-        expect((iframeWindow as any).RuntimeBundle.TestComponent).toBeDefined();
-
-        await ctx.runtime.unmount();
+        const iframeWindow = ctx.runtime.getContentWindow() as any;
+        expect(typeof iframeWindow.__handleCommand).toBe("function");
+        expect(iframeWindow.__dumpRuntimeState?.()?.previewComponents ?? 0).toBe(1);
     });
 });
 
