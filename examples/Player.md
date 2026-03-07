@@ -14,6 +14,14 @@ const DEFAULT_PLAYER_OPTIONS: Partial<PlayerProps> = {
 };
 
 export const Player = (props: PlayerProps) => {
-  return <RemotionPlayer {...DEFAULT_PLAYER_OPTIONS} {...props} />;
+  const mergedProps = { ...DEFAULT_PLAYER_OPTIONS, ...props };
+  // Calculate aspect ratio from composition dimensions
+  const aspectRatio = mergedProps.compositionWidth! / mergedProps.compositionHeight!;
+  
+  return (
+    <div style={{ width: "100%", aspectRatio }}>
+      <RemotionPlayer {...mergedProps} />
+    </div>
+  );
 };
 ```

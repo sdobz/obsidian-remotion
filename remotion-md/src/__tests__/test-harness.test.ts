@@ -150,7 +150,7 @@ render(<div>Test</div>, { durationInFrames: 30 });
 \`\`\`
       `);
 
-            expect(result.widgetSpans.length).toBeGreaterThan(0);
+            expect(result.previewLocations.length).toBeGreaterThan(0);
         });
 
         it("should handle multiple render calls", () => {
@@ -164,7 +164,7 @@ render(<div>Second</div>, { durationInFrames: 60 });
 \`\`\`
       `);
 
-            expect(result.widgetSpans.length).toBe(2);
+            expect(result.previewLocations.length).toBe(2);
         });
     });
 

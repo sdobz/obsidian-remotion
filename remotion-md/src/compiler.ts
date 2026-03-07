@@ -39,7 +39,7 @@ export function compileVirtualModule(
     module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.NodeJs,
     noEmitOnError: false,
-    noLib: false, // Include standard lib types
+    noLib: true,
     skipLibCheck: true,
     esModuleInterop: true,
     // Enable strict type checking to catch undefined variables
